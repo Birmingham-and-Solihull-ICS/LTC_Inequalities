@@ -1,0 +1,3251 @@
+---
+title: "LTC and inequality"
+author: "Jolene Atia"
+execute: 
+  warning: false
+  echo: false
+format:
+  html: 
+    code-fold: true
+    toc: true
+    toc-location: left
+    #toc-expand: true
+   # number-sections: true
+    embed-resources: true
+ #   html-math-method: katex
+params:
+   LTC: "CVD"
+   LTCv : CVD
+project:
+  output-dir: output  
+   
+---
+
+# `{r} params$LTC`
+
+In this document we study the `{r} params$LTC` population in BSOL to better understand the patterns leading to inequalities. Differences in socioeconomic status, including level of education, income, employment, health and other factors are accounted for by studying the prevalence and mortality of `{r} params$LTC` by Index of multiple Deprivation (IMD)\[6\] . We use the census for England and Wales that identifies five high-level ethnic groups \[7\] to study ethnic inequalities in the `{r} params$LTC`population.
+
+```{r}
+#| label: load-packages
+
+#tinytex::install_tinytex()
+
+#install.packages('Rtools')
+#install.packages('dsr')
+#install.packages("ggsci")
+#install.packages("RColorBrewer")
+#install.packages("kableExtra")
+#install.packages("sparkline")
+
+library(odbc)
+library(DBI)
+library(glue)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(hrbrthemes)
+library(gridExtra)
+library(grid)
+library(flextable)
+library(FunnelPlotR)
+library(PHEindicatormethods)
+library(reshape2)
+library(formattable)
+library(ggsci)
+library(RColorBrewer)
+library(knitr)
+library(magrittr)
+library(kableExtra)
+library(sparkline)
+library(lubridate)
+library(stringr)
+
+```
+
+## Studying our population
+
+Monthly death count in BSOL is extracted from the death register from 2018. The later provides the number of deaths registered in a calendar month by area of usual residence in England and Wales
+(@fig-DeathMonthly).
+
+```{r}
+#| label: import Death register
+
+# [*Trying to plot mean and sigma limits (in red) and the median with SD (black) to show the # difference-still needs a bit of work*]{style="color:green"}
+#import BSOL death patients 
+#use "Importing data SQL to an RDS File.R" to convert file to rds
+# 
+# connection <- dbConnect(
+#   odbc(),
+#   Driver = "SQL Server",
+#   Server = "MLCSU-BI-SQL",
+#   Database = "EAT_Reporting_BSOL",
+#   Trusted_Connection = "True"
+#   )
+# 
+# 
+# DeathPatients <- dbGetQuery(
+#   connection,"SELECT * FROM Eat_Reporting_BSOL.Development.BSOL_1300_DeathMaster"
+#   ) %>% as_tibble()
+
+
+# read_rds_data <- function(rds_file_name, cols_list) {
+#   tryCatch({
+#     message(paste("Reading", rds_file_name, "..."))
+#     loaded_data <- readRDS(rds_file_name)
+#     if (!is.null(cols_list)) {
+#       colnames(loaded_data) <- cols_list
+#     }
+#     message("Done! Loaded as a dataframe!")
+#     return(loaded_data)
+#   }, error = function(e) {
+#     message("An unexpected error occurred: ", conditionMessage(e))
+#   })
+# }
+ 
+# Read RDS data
+
+#DeathPatients<-read_rds_data(DeathPatients.rds)
+DeathPatients <- readRDS("data/DeathPatients.rds")
+
+#dbDisconnect(connection)
+
+
+```
+
+```{r}
+##Plotting number of monthly numbers (by month of death)
+
+###for plotting-sorting out variables and variable types
+MonthlyDeath<-setNames(data.frame(table(DeathPatients$MonthOfDeath)),c("MonthOfDeath","Count"))
+MonthlyDeath$Month <- seq.int(nrow(MonthlyDeath))
+MonthlyDeath$MonthDate<-format(as.Date(paste(MonthlyDeath$MonthOfDeath, "01", sep=""), "%Y%m%d"),format="%b-%y")
+
+#Calculate sigma of sigma limit-using XmR SPC
+
+MonthlyDeath$Count %>% # 10 million samples form normal distribution 
+  diff() %>%                 # Difference between each point
+  abs() %>%                  # Absolute value of each difference (moving range...)
+  mean(na.rm=T) ->           # The mean of the moving ranges
+dd                          # assigning to the constant d
+
+
+
+#Date
+
+d<-MonthlyDeath$MonthDate[seq(from=1,to=nrow(MonthlyDeath),by=7)]
+t<-MonthlyDeath$Month[seq(from=1,to=nrow(MonthlyDeath),by=7)]
+
+
+```
+
+```{r fig.height=2.5,fig.width=10}
+#| label: fig-DeathMonthly
+#| fig-cap: BSOL monthly mortality counts. Also shown the mean of the whole data (long dash red line), the median of the whole data (long dash black line), three sigma limits (dotted red lines), and two and three standard deviation from the median (dashed and dotted black lines, respectively). 
+
+
+#run chart of monthly death 
+ggplot(data=MonthlyDeath,aes(x=Month,y=Count))+ geom_point(size=1.1,shape=16)+
+ geom_line()+
+#geom_vline(xintercept = 26,color="blue")+ 
+#geom_smooth(method="lm")+
+#geom_vline(xintercept = 25,color="blue")+
+#geom_vline(xintercept = 80, color="blue")+ 
+geom_hline(yintercept=median.default(MonthlyDeath$Count),label="Median",size=0.5,linetype="longdash")+
+geom_hline(yintercept=mean.default(MonthlyDeath$Count),color="red",size=0.5,linetype="longdash")+
+geom_hline(yintercept=median(MonthlyDeath$Count)-2*sd(MonthlyDeath$Count),linetype="dashed")+
+geom_hline(yintercept=median(MonthlyDeath$Count)+2*sd(MonthlyDeath$Count),linetype="dashed")+
+geom_hline(yintercept=median(MonthlyDeath$Count)-3*sd(MonthlyDeath$Count),linetype="dotted")+
+geom_hline(yintercept=mean(MonthlyDeath$Count)-3*dd/1.28,linetype="dotted",color="red")+  
+geom_hline(yintercept=median(MonthlyDeath$Count)+3*sd(MonthlyDeath$Count),linetype="dotted")+
+geom_hline(yintercept=mean(MonthlyDeath$Count)+3*dd/1.28,linetype="dotted",color="red")+
+scale_x_continuous(name="Month of Death",breaks=t,labels=d)+
+#labs(  title="BSOL monthly mortality counts") +
+#scale_y_continuous(name="Number of monthly",breaks=seq(0,49,3))+
+theme(axis.text=element_text(size=8,face="bold"),axis.line=element_line(color="black",size=0.6) ,axis.title = element_text(size=7,face="bold"),plot.title = element_text(size=10,face="bold"),axis.ticks.length = unit(0.15, "cm"))
+```
+
+In @fig-LTC we look at the rate of death in the UK caused by `{r} params$LTC` from the death register (number of `{r} params$LTC` death per total monthly death per 100,000). This shows the proportion of death attributed to CVD as the underlying cause, which are coded using ICD-10 codes. 
+
+```{r fig.height=2.5,fig.width=10}
+#| label: fig-LTC
+#| fig-cap: !expr glue::glue ("BSOL monthly mortality death with {params$LTC} as the cause of death as a proportion of BSOL total death per 100,000. Also shown the mean of the whole data (long dashed red line) and the median of the whole data (long dashed black line).")
+
+
+
+#rate of LTC death
+
+
+MonthlyLTCDeath<-DeathPatients %>% 
+          # filter(Cause_Death="CVD") %>% 
+                          group_by(MonthOfDeath) %>% 
+                              summarise(LTC=sum(Cause_Death == params$LTC ,na.rm=TRUE),  #params$LTC),
+                                            Total=n(),
+                                            .groups='drop') %>% 
+                                mutate(CrudeRate=LTC/Total *100)
+
+MonthlyLTCDeath$Month <- seq.int(nrow(MonthlyLTCDeath))
+MonthlyLTCDeath$MonthDate<-format(as.Date(paste(MonthlyLTCDeath$MonthOfDeath, "01", sep=""), "%Y%m%d"),format="%b-%y")
+
+d<-MonthlyLTCDeath$MonthDate[seq(from=1,to=nrow(MonthlyLTCDeath),by=7)]
+t<-MonthlyLTCDeath$Month[seq(from=1,to=nrow(MonthlyLTCDeath),by=7)]
+
+ggplot(data=MonthlyLTCDeath,aes(x=Month,y=CrudeRate))+ geom_point(size=1.1,shape=16)+
+  geom_line()+
+#geom_hline(yintercept=median.default(MonthlyLTCDeath$CrudeRate),label="Median")+
+geom_hline(yintercept=mean.default(MonthlyLTCDeath$CrudeRate),color="red",size=0.5,linetype="longdash")+
+  geom_hline(yintercept=median.default(MonthlyLTCDeath$CrudeRate),color="black",size=0.5,linetype="longdash")+
+#geom_hline(yintercept=median(MonthlyLTCDeath$CrudeRate)-2*sd(MonthlyLTCDeath$CrudeRate),linetype="dashed")+
+#geom_hline(yintercept=median(MonthlyLTCDeath$CrudeRate)+2*sd(MonthlyLTCDeath$CrudeRate),linetype="dashed")+
+#geom_hline(yintercept=median(MonthlyLTCDeath$CrudeRate)-3*sd(MonthlyLTCDeath$CrudeRate),linetype="dotted")+
+#geom_hline(yintercept=mean(MonthlyLTCDeath$CrudeRate)-3*dd/1.28,linetype="dotted",color="red")+  
+#geom_hline(yintercept=median(MonthlyLTCDeath$CrudeRate)+3*sd(MonthlyLTCDeath$CrudeRate),linetype="dotted")+
+#geom_hline(yintercept=mean(MonthlyLTCDeath$CrudeRate)+3*dd/1.28,linetype="dotted",color="red")+
+scale_x_continuous(name="Month of Death",breaks=t,labels=d)+
+#labs(  title="BSOL monthly percentage of LTC mortality per 100,000") +
+scale_y_continuous(name=paste0("Percentage ",params$LTC," death"))+#+breaks=seq(0,2,max(MonthlyLTCDeath$CrudeRate))+
+theme(axis.text=element_text(size=8,face="bold"),axis.line=element_line(color="black",size=0.6) ,axis.title = element_text(size=7,face="bold"),plot.title = element_text(size=10,face="bold"),axis.ticks.length = unit(0.15, "cm"))
+
+
+```
+
+```{r}
+
+#| label: import Population data
+
+#import BSOL death patients 
+
+# connection2 <- dbConnect(
+#   odbc(),
+#   Driver = "SQL Server",
+#   Server = "MLCSU-BI-SQL",
+#   Database = "Working",
+#   Trusted_Connection = "True"
+#   )
+# 
+# 
+# AllBSOLPatients <- dbGetQuery(
+#   connection2,"select * from Working.dbo.BSOL_1252_Patient_All_small"
+#   ) %>% as_tibble()
+
+#dbDisconnect(connection2)
+
+##function (Siti) to read and convert rds file to dataframe
+
+
+ 
+# Read RDS data
+
+#AllBSOLPatients<-read_rds_data(AllBSOLPatients.rds,NULL)
+AllBSOLPatients <- readRDS("data/AllBSOLPatients3Y.rds")
+All<- readRDS("data/AllBSOLPatients.rds")
+```
+
+```{r}
+#cleaning data 
+#sorting out some columns in the BSOL population table
+
+#Adding codes to ethnicity category of BSOL population 
+AllBSOLPatients<-AllBSOLPatients %>% 
+                mutate(Ethnicity=ifelse(Ethnic_Grouping_Census %in% c("Not Known","Not known"), yes =                           "Unknown",Ethnic_Grouping_Census)) %>% 
+                    mutate(EthnicityCode=case_when (str_detect(Ethnic_Grouping_Census,'Asian')~1,
+					                                str_detect(Ethnic_Grouping_Census,'Black')~2,
+                                    			str_detect(Ethnic_Grouping_Census,'Mixed')~3,
+      					                          str_detect(Ethnic_Grouping_Census,'Known')~4,
+                                          str_detect(Ethnic_Grouping_Census,'Other')~5,
+      					                          str_detect(Ethnic_Grouping_Census,'White')~6,
+					                                TRUE ~ NA)
+					                                 , .before='Ethnic_Grouping_Census') %>% 
+                    
+                   mutate(across(AgeBand_3,str_replace,'15 and under','15 under'))
+
+
+```
+
+
+\newpage
+
+## BSOL population
+
+We first study the population and its age profile and number of death and `{r} params$LTC` death in the population by age. We use our patient level BSOL linked data extract based on current GP registered or BSOL resident population or anybody who would have been either within the last 12 months. The bar chart (@fig-BSOLpopulation) shows the age structure of the population and of the `{r} params$LTC` population in BSOL, respectively (green), together with the percentage of death and the `{r} params$LTC` population death (orange), and the percentage of death caused by `{r} params$LTC` (purple) in each age group. @tbl-Cohorts shows the numbers in the population. See @sec-Methods for how we identified the `{r} params$LTC` population in BSOL.
+
+```{r fig.height=3,fig.width=10}
+#, events, population and manually calcualted Crude rate- number of death per population X 100,000
+
+##LTC Mortality
+##join death data with our main patient level data
+BSOLAllPatientAvoiDeath<- AllBSOLPatients %>% left_join(DeathPatients,
+                                    by=c("Pseudo_NHS_Number_Varchar"="NHSNumber"))
+
+LTCPar<-{params$LTC}
+#LTCPar<-"CVD"
+
+LTCCol<-as.name(paste0(LTCPar,'_Patient'))
+
+
+
+
+Mortality<-BSOLAllPatientAvoiDeath %>% 
+                              summarise(
+                                Total=n(),NumDeath=sum(`Is_Deceased`),
+                                      TotalLTC=sum(.[[LTCCol]]==1),
+                                 NumDeathwithLTC=sum(.[[LTCCol]]==1 & Is_Deceased==1),
+                                        NumDeathLTC=sum(Cause_Death == LTCPar ,na.rm=TRUE),# params$LTC
+                                       
+                                      
+                                    .groups='drop') %>% 
+                              mutate(CrudeRate=round(NumDeath/Total *100000,2)) %>% 
+                              mutate(CrudeRateLTC=round(NumDeathLTC/TotalLTC *100000,2)) %>% 
+                              mutate(CrudeRatewithLTC=round(NumDeathwithLTC/TotalLTC *100000,2))
+
+
+
+
+
+```
+
+
+
+```{r}
+#| label: tbl-Cohorts
+#| tbl-cap: !expr glue::glue("BSOL population and BSOL {params$LTC} population and the number of death in the different cohorts")
+
+Mortality %>% flextable() %>% 
+ set_header_labels( values=c(
+                              "Total   population","Number Death",
+                              paste0('Number ', LTCPar, ' Patients'),
+                                paste0('Number ', ' Death with ' , LTCPar),
+                             paste0('Number ', ' Death with ' , LTCPar, ' as cause' ),
+                           
+                             
+
+                             "Mortality Rate per 100,000",
+                             paste0(LTCPar,' Cause Mortality Rate per 100,000'),
+                             paste0(LTCPar,' Patients Mortality Rate per 100,000')
+                             )
+                    ) %>% 
+  theme_vanilla() %>%
+    autofit()   %>% 
+  set_caption("Whole population")
+
+```
+
+```{r}
+AgeProfile<-BSOLAllPatientAvoiDeath %>% 
+  group_by(AgeBand_3) %>% 
+  #filter(!is.na(AgeBand_3)) %>% 
+  summarise(NumDeath=sum(`Is_Deceased`==1),
+            NumDeathLTC=sum(Cause_Death == LTCPar ,na.rm=TRUE),# params$LTC
+            NumDeathwithLTC=sum(CVD_Patient==1 & Is_Deceased==1),
+            totalDeath=nrow(.[.$`Is_Deceased`==TRUE, ]),
+            totalDeathLTC=nrow(.[which(.$Cause_Death==LTCPar), ]),
+            totalDeathwithLTC=nrow(.[which(.[[LTCCol]][]==1&.$Is_Deceased[]==1), ]),
+            Pop=n(),
+            totalPop=nrow(.),
+           PopLTC=sum(CVD_Patient==1),
+            totalPopwithLTC=nrow(.[which(.[[LTCCol]][]==1), ]),
+            .groups='drop') %>%  #%>% group_modify(PopLTC=sum(.[[LTCCol]]==1)) %>% 
+           
+            mutate(PercentageDeath=round(NumDeath/totalDeath *100,2)) %>% 
+            mutate(PercentageDeathLTC=round(NumDeathLTC/totalDeathLTC *100,2)) %>% 
+            mutate(PercentageDeathwithLTC=round(NumDeathwithLTC/totalDeathwithLTC *100,2)) %>% 
+            mutate(PercentagePop=round(Pop/totalPop *100,2)) %>% 
+            mutate(PercentagePopLTC=round(PopLTC/totalPopwithLTC *100,2))
+            
+
+      
+##Age profile
+ p_PopAge<- ggplot(AgeProfile,aes(x=AgeBand_3,y=PercentagePop))+
+  geom_bar(stat="identity", fill="#1B9E77")+
+  labs( x="Age group",y="Percentage", title="Age Profile of population") +
+   theme_minimal()+
+   theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title=element_text(size=7),
+        plot.title = element_text(size=7),
+        strip.text = element_text(size=7),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+ 
+p_DeathAge<- ggplot(AgeProfile,aes(x=AgeBand_3,y=PercentageDeath))+
+  geom_bar(stat="identity", fill="#D95F02")+
+  labs( x="Age group",y="Percentage", title="Percentage of death by age") +
+   theme_minimal() +
+  theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title=element_text(size=7),
+        plot.title = element_text(size=7),
+        strip.text = element_text(size=7),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+
+ p_PopAgeLTC<- ggplot(AgeProfile,aes(x=AgeBand_3,y=PercentagePopLTC))+
+  geom_bar(stat="identity", fill="#1B9E77")+
+  labs( x="Age group",y="Percentage", title=paste0('Age Profile of ',LTCPar,' population') )+
+   theme_minimal()+
+   theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title=element_text(size=7),
+        plot.title = element_text(size=7),
+        strip.text = element_text(size=7),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+ 
+p_DeathAgeLTC<- ggplot(AgeProfile,aes(x=AgeBand_3,y=PercentageDeathwithLTC))+
+  geom_bar(stat="identity", fill="#D95F02")+
+  labs( x="Age group",y="Percentage", title=paste0("Percentage of ",LTCPar," patients death by age")) +
+   theme_minimal() +
+  theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title=element_text(size=7),
+        plot.title = element_text(size=7),
+        strip.text = element_text(size=7),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+
+
+p_DeathAgewithLTC<- ggplot(AgeProfile,aes(x=AgeBand_3,y=PercentageDeathLTC))+
+  geom_bar(stat="identity", fill="#7570B3")+
+  labs( x="Age group",y="Percentage", title=paste0("Percentage death with ",LTCPar, "\n as a cause by age")) +
+   theme_minimal() +
+  theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title=element_text(size=7),
+        plot.title = element_text(size=7),
+        strip.text = element_text(size=7),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+
+
+```
+
+```{r fig.height=2.5,fig.width=10}
+#| label: fig-BSOLpopulation
+#| fig-cap: !expr glue::glue("BSOL population age profile, percentage mortality, {params$LTC} population age profile and {params$LTC} mortality by age")
+
+grid.arrange(p_PopAge,p_DeathAge,p_PopAgeLTC,p_DeathAgeLTC,p_DeathAgewithLTC,ncol=5)
+```
+
+We look at the age profile and percentage of death in the different cohorts by age by IMD. The age structure of the different IMD group is different.The least deprived group have more than 20% of over 65s and less than 40% of the population is under 35 years old. In the most deprived, the younger population (35 and under) accounts for around 55% of the population and less than 10% of the population is over 65. Despite the difference in the age structure in both populations, the percentage of death (in total and in the `{r} params$LTC` population) look similar in both populations. The highest prevalance of `{r} params$LTC`in the younger population (between 35-64) is in the least deprived cohort (see age profile of `{r} params$LTC` patients).
+
+```{r fig.height=2.5, fig.width=10}
+##| label: fig-BSOL_IMD
+##| fig-cap: BSOL age profile and number of death by age by IMD
+
+  d<-BSOLAllPatientAvoiDeath %>% 
+            group_by(IMD_Quintile,AgeBand_3) %>% 
+            filter((!is.na(IMD_Quintile) & !is.na(AgeBand_3)))
+  
+  for (x in 1:length(unique(d$`IMD_Quintile`))){ 
+    #print(d$IMD_Quintile[x])
+      d_e<-d[which(d$`IMD_Quintile`[]==sort(unique(d$`IMD_Quintile`))[x]), ] %>%  ##need the percentage of each inequality marker separetly to get age profile of each
+            summarise(
+            NumDeath=sum(`Is_Deceased`),
+            NumDeathLTC=sum(Cause_Death == LTCPar,na.rm=TRUE),# params$LTC
+            NumDeathwithLTC=sum(CVD_Patient==1 & Is_Deceased==1),
+            totalDeath=nrow(.[.$`Is_Deceased`==TRUE, ]),
+            totalDeathLTC=nrow(.[which(.$Cause_Death==LTCPar), ]),
+            totalDeathwithLTC=nrow(.[which((.$CVD_Patient[]==1)& (.$Is_Deceased[]==1)), ]),
+            Pop=n(),
+            totalPop=nrow(.),
+            PopLTC=sum(CVD_Patient==1),
+            totalPopwithLTC=nrow(.[which(.[[LTCCol]][]==1), ]),
+            .groups='drop') %>% 
+           
+            mutate(PercentageDeath=round(NumDeath/totalDeath *100,2)) %>% 
+            mutate(PercentageDeathLTC=round(NumDeathLTC/totalDeathLTC *100,2)) %>% 
+            mutate(PercentageDeathwithLTC=round(NumDeathwithLTC/totalDeathwithLTC *100,2)) %>% 
+            mutate(PercentagePop=round(Pop/totalPop *100,2)) %>% 
+            mutate(PercentagePopLTC=round(PopLTC/totalPopwithLTC *100,2))
+      
+      
+        
+       p1<-ggplot(d_e,aes(x=AgeBand_3,y=PercentagePop))+
+  geom_bar(stat="identity", fill="#1B9E77")+
+  labs( x="Age group",y="Percentage", title="Age Profile") +
+    facet_wrap(~(IMD_Quintile))+
+   theme_minimal()+
+   theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title.x=element_text(size=7),
+        #axis.title.y=element_blank(),
+        plot.title = element_text(size=7),
+        strip.text = element_blank(),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+ 
+ 
+  p2<-ggplot(d_e,aes(x=AgeBand_3,y=PercentageDeath))+
+  geom_bar(stat="identity", fill="#D95F02")+
+  labs( x="Age group", title="% death by age") +
+   facet_wrap(~IMD_Quintile)+
+   theme_minimal() +
+  theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title.x =element_text(size=7),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=7),
+        strip.text = element_blank(),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+  
+ p11<-ggplot(d_e,aes(x=AgeBand_3,y=PercentagePopLTC))+
+  geom_bar(stat="identity", fill="#1B9E77")+
+  labs( x="Age group",y="Percentage", title=paste0("Age Profile of ", LTCPar, " Patients")) +
+    facet_wrap(~(IMD_Quintile))+
+   theme_minimal()+
+   theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title.x=element_text(size=7),
+        #axis.title.y=element_blank(),
+        plot.title = element_text(size=7),
+        strip.text = element_blank(),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+        
+ 
+  p22<-ggplot(d_e,aes(x=AgeBand_3,y=PercentageDeathLTC))+
+  geom_bar(stat="identity", fill="#D95F02")+
+  labs( x="Age group", title=paste0("% of ", LTCPar, " patients death by age")) +
+   facet_wrap(~IMD_Quintile)+
+   theme_minimal() +
+  theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title.x =element_text(size=7),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=7),
+        strip.text = element_blank(),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+
+  
+
+p3<- ggplot(d_e,aes(x=AgeBand_3,y=PercentageDeathwithLTC))+
+  geom_bar(stat="identity", fill="#7570B3")+
+  labs( x="Age group", title=paste0("% death with ", LTCPar," as a cause \n by age")) +
+   facet_wrap(~IMD_Quintile)+
+   theme_minimal() +
+  theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title.x=element_text(size=7),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=7),
+        strip.text = element_blank(),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+
+
+grid.arrange(p1,p2,p11,p22,p3,nrow=1,ncol=5,
+             top= textGrob(paste("IMD Quintile =",x, "by age"),gp=gpar(fontsize=10)))
+
+
+
+ #plot_list[[x]]<- p
+
+  }
+
+
+ 
+```
+
+\newpage
+
+Similarly we look at the age structure for the difference ethnicity groups in the population. As seen in the Age profile of the different ethnic groups (green), the white population has more than 20% over 65 versus less than 10% in the other ethnic groups. The white and unknown groups has the least percentage of 15 and under age groups (around 15%) in comparison to all other groups. Looking at the `{r} params$LTC` population, the Asian or Asian British, the Black, African, Caribbean or Black British, Mixed or Multiple ethnic, and Other Ethnicity groups have all got a high percentage of `{r} params$LTC` patients in the 35-64 year old groups as opposed to the Unknown and the White population who has similar `{r} params$LTC` patients age profiles with more than 45% of `{r} params$LTC` patients in the 65+ age group. Looking at the percentage of death in the population and in the `{r} params$LTC` population, the Mixed or Multiple ethnic and Other Ethnicity have got higher death in the younger 35-64 age groups compared to the other ethnic groups.
+
+Generally, given the obvious difference in age structure in the different groups in the population, we need to adjust for this difference to be able to see the mortality (or other events) without worrying about the age structure.
+
+```{r fig.height=2.5, fig.width=10}
+##| label: fig-BSOL_Eth
+##| fig-cap: BSOL age profile and number of death by age by ethnicity
+
+  d<-BSOLAllPatientAvoiDeath %>% 
+            group_by(Ethnicity,AgeBand_3) %>% 
+            filter((!is.na(Ethnicity) & !is.na(AgeBand_3)))
+  
+  for (x in 1:length(unique(d$`Ethnicity`))){ 
+    #print(d$IMD_Quintile[x])
+      d_e<-d[which(d$`Ethnicity`[]==sort(unique(d$`Ethnicity`))[x]), ] %>%  ##need the percentage of each inequality marker separetly to get age profile of each
+           summarise(
+            NumDeath=sum(`Is_Deceased`),
+            NumDeathLTC=sum(Cause_Death == LTCPar,na.rm=TRUE),# params$LTC
+            NumDeathwithLTC=sum(CVD_Patient==1 & Is_Deceased==1),
+            totalDeath=nrow(.[.$`Is_Deceased`==TRUE, ]),
+            totalDeathLTC=nrow(.[which(.$Cause_Death==LTCPar), ]),
+            totalDeathwithLTC=nrow(.[which((.$CVD_Patient[]==1)& (.$Is_Deceased[]==1)), ]),
+            Pop=n(),
+            totalPop=nrow(.),
+            PopLTC=sum(CVD_Patient==1),
+            totalPopwithLTC=nrow(.[which(.$CVD_Patient[]==1), ]),
+            .groups='drop') %>% 
+           
+            mutate(PercentageDeath=round(NumDeath/totalDeath *100,2)) %>% 
+            mutate(PercentageDeathLTC=round(NumDeathLTC/totalDeathLTC *100,2)) %>% 
+            mutate(PercentageDeathwithLTC=round(NumDeathwithLTC/totalDeathwithLTC *100,2)) %>% 
+            mutate(PercentagePop=round(Pop/totalPop *100,2)) %>% 
+            mutate(PercentagePopLTC=round(PopLTC/totalPopwithLTC *100,2))
+              
+       p1<-ggplot(d_e,aes(x=AgeBand_3,y=PercentagePop))+
+  geom_bar(stat="identity", fill="#1B9E77")+
+  labs( x="Age group",y="Percentage", title="Age Profile") +
+    facet_wrap(~(Ethnicity))+
+   theme_minimal()+
+   theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title.x=element_text(size=7),
+        #axis.title.y=element_blank(),
+        plot.title = element_text(size=7),
+        strip.text = element_blank(),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+ 
+ 
+  p2<-ggplot(d_e,aes(x=AgeBand_3,y=PercentageDeath))+
+  geom_bar(stat="identity", fill="#D95F02")+
+  labs( x="Age group", title="% death by age") +
+   facet_wrap(~Ethnicity)+
+   theme_minimal() +
+  theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title.x =element_text(size=7),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=7),
+        strip.text = element_blank(),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+  
+ p11<-ggplot(d_e,aes(x=AgeBand_3,y=PercentagePopLTC))+
+  geom_bar(stat="identity", fill="#1B9E77")+
+  labs( x="Age group",y="Percentage", title=paste0("Age Profile of ", LTCPar," Patients")) +
+    facet_wrap(~(Ethnicity))+
+   theme_minimal()+
+   theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title.x=element_text(size=7),
+        #axis.title.y=element_blank(),
+        plot.title = element_text(size=7),
+        strip.text = element_blank(),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+        
+ 
+  p22<-ggplot(d_e,aes(x=AgeBand_3,y=PercentageDeathLTC))+
+  geom_bar(stat="identity", fill="#D95F02")+
+  labs( x="Age group", title=paste0("% of ", LTCPar," patients' death by age")) +
+   facet_wrap(~Ethnicity)+
+   theme_minimal() +
+  theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title.x =element_text(size=7),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=7),
+        strip.text = element_blank(),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+
+  
+
+p3<- ggplot(d_e,aes(x=AgeBand_3,y=PercentageDeathwithLTC))+
+  geom_bar(stat="identity", fill="#7570B3")+
+  labs( x="Age group", title=paste0("% death with ", LTCPar," as a cause \n by age")) +
+   facet_wrap(~Ethnicity)+
+   theme_minimal() +
+  theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=7),
+        axis.title.x=element_text(size=7),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=7),
+        strip.text = element_blank(),
+        legend.title = element_text(size=7),
+        legend.text=  element_text(size=7),
+        legend.key.size =unit(0.3,'cm' ))
+
+grid.arrange(p1,p2,p11, p22,p3,ncol=5,#heights=c(3,3,3),
+             top= textGrob(paste(sort(unique(d$`Ethnicity`))[x], "group by age"),gp=gpar(fontsize=10)))
+
+
+
+ #plot_list[[x]]<- p
+
+  }
+ 
+```
+
+## Prevalance and Mortality rates
+
+To consider the different methods of calculating event rates in the different groups in the population, we construct tables of number of events (`{r} params$LTC` patients, death in the `{r} params$LTC` patients cohort, and death caused by `{r} params$LTC`), the population number for this time period by IMD, ethnicity and age. We also calculate the crude rate by age/sex for the different population groups (see @sec-Appendix1 for the different tables).
+
+```{r}
+InequalityDeath<- function (data,Inequalitymarker){
+  Inequalitymarker<-enquo(Inequalitymarker)  #quote
+  d<-data %>%
+            group_by(!!Inequalitymarker,AgeBand_3,Gender_Desc) %>%
+            filter((!is.na(!!Inequalitymarker) & !is.na(AgeBand_3)) & Gender_Desc
+                   %in% c("Female","Male")) %>%
+                              summarise(LTCPop=sum(CVD_Patient==1),
+                                      NumDeath=sum(`Is_Deceased`,na.rm=TRUE),
+                                      NumDeathLTC=sum(Cause_Death == params$LTC,na.rm=TRUE),# params$LTC
+                                      NumDeathwithLTC=sum(CVD_Patient==1 & Is_Deceased==1),
+                                  Total=n(),
+                                  .groups='drop') %>%
+                                mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+                                mutate(`LTC_Mortality_Rate`=round(NumDeathLTC/LTCPop *100000,2)) %>% 
+                                mutate(`withLTC_Mortality_Rate`=round(NumDeathwithLTC/LTCPop *100000,2)) 
+                                #mutate(`Mortality Rate`=ifelse(Gender_Desc =="Male",yes=Mortality_Rate, no=Mortality_Rate))
+
+return(d)
+}
+
+
+
+
+#head(AllBSOLPatients$Gender_Desc)
+
+#by IMD and age
+
+IMDAgeGender<-InequalityDeath(BSOLAllPatientAvoiDeath,IMD_Quintile)
+
+IMDAge<-IMDAgeGender %>% 
+          group_by(IMD_Quintile,AgeBand_3) %>% 
+         summarise(LTCPop=sum(LTCPop),
+           NumDeath=sum(NumDeath),
+            NumDeathLTC=sum(NumDeathLTC),
+            NumDeathwithLTC=sum(NumDeathwithLTC),
+            Total=sum(Total),
+           .groups='drop') %>%
+           mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+           mutate(`LTC_Mortality_Rate`=round(NumDeathLTC/LTCPop *100000,2)) %>% 
+            mutate(`withLTC_Mortality_Rate`=round(NumDeathwithLTC/LTCPop *100000,2)) 
+          
+
+#rates by IMD only-crude rate (to be compared to the standardised rates)
+ IMD<-IMDAgeGender %>% 
+   group_by(IMD_Quintile) %>% 
+   summarise(LTCPop=sum(LTCPop),
+            NumDeath=sum(NumDeath),
+            NumDeathLTC=sum(NumDeathLTC),
+            NumDeathwithLTC=sum(NumDeathwithLTC),
+            Total=sum(Total),
+           .groups='drop') %>%
+           mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+           mutate(`LTC_Mortality_Rate`=round(NumDeathLTC/LTCPop *100000,2)) %>% 
+            mutate(`withLTC_Mortality_Rate`=round(NumDeathwithLTC/LTCPop *100000,2)) 
+ 
+ #brewer.pal(n = 8, name = "Dark2")
+
+
+ #by ethnicity and age
+
+EthAgeGender<-InequalityDeath(BSOLAllPatientAvoiDeath,Ethnicity) 
+
+
+EthAge<-EthAgeGender %>% 
+          group_by(Ethnicity,AgeBand_3) %>% 
+        
+              summarise(
+                LTCPop=sum(LTCPop),
+                NumDeath=sum(NumDeath),
+            NumDeathLTC=sum(NumDeathLTC),
+            NumDeathwithLTC=sum(NumDeathwithLTC),
+            Total=sum(Total),
+           .groups='drop') %>%
+           mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+           mutate(`LTC_Mortality_Rate`=round(NumDeathLTC/LTCPop *100000,2)) %>% 
+            mutate(`withLTC_Mortality_Rate`=round(NumDeathwithLTC/LTCPop *100000,2)) 
+              
+  
+ 
+#rates by Ethnicity only-crude rate (to be compared to the standardised rates)
+ Eth<-EthAgeGender %>% 
+   group_by(Ethnicity) %>% 
+   summarise(LTCPop=sum(LTCPop),
+            NumDeath=sum(NumDeath),
+            NumDeathLTC=sum(NumDeathLTC),
+            NumDeathwithLTC=sum(NumDeathwithLTC),
+            Total=sum(Total),
+           .groups='drop') %>%
+           mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+           mutate(`LTC_Mortality_Rate`=round(NumDeathLTC/LTCPop *100000,2)) %>% 
+            mutate(`withLTC_Mortality_Rate`=round(NumDeathwithLTC/LTCPop *100000,2)) 
+
+ 
+ AgeBSOL<-EthAgeGender %>% 
+   group_by(AgeBand_3) %>% 
+   summarise(LTCPop=sum(LTCPop),
+             NumDeath=sum(NumDeath),
+            NumDeathLTC=sum(NumDeathLTC),
+            NumDeathwithLTC=sum(NumDeathwithLTC),
+            Total=sum(Total),
+           .groups='drop') %>%
+           mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+           mutate(`LTC_Mortality_Rate`=round(NumDeathLTC/LTCPop *100000,2)) %>% 
+            mutate(`withLTC_Mortality_Rate`=round(NumDeathwithLTC/LTCPop *100000,2)) 
+ #"#1B9E77" "#D95F02" "#7570B3" "#E7298A" "#66A61E" "#E6AB02" "#A6761D" "#666666"
+
+
+```
+
+```{r}
+##get the population by ethnicty and IMD (and age and gender)
+
+IMDEthAgeGender<- BSOLAllPatientAvoiDeath %>%
+            group_by(Ethnicity,IMD_Quintile,AgeBand_3,Gender_Desc) %>%
+            filter((!is.na(Ethnicity) &!is.na(IMD_Quintile) & !is.na(AgeBand_3)) & Gender_Desc
+                   %in% c("Female","Male")) %>%
+                              summarise(LTCPop=sum(CVD_Patient==1),
+                                      NumDeath=sum(`Is_Deceased`,na.rm=TRUE),
+                                      NumDeathLTC=sum(Cause_Death == params$LTC,na.rm=TRUE),# params$LTC
+                                      NumDeathwithLTC=sum(CVD_Patient==1 & Is_Deceased==1),
+                                  Total=n(),
+                                  .groups='drop') %>%
+                                mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+                                mutate(`LTC_Mortality_Rate`=round(NumDeathLTC/LTCPop *100000,2)) %>% 
+                                mutate(`withLTC_Mortality_Rate`=round(NumDeathwithLTC/LTCPop *100000,2)) 
+                                #mutate(`Mortality Rate`=ifelse(Gender_Desc =="Male",yes=Mortality_Rate, no=Mortality_Rate))
+
+
+
+
+#head(AllBSOLPatients$Gender_Desc)
+
+#by IMD and age
+
+IMDEthAge<-IMDEthAgeGender %>% 
+          group_by(Ethnicity,IMD_Quintile,AgeBand_3) %>% 
+         summarise(LTCPop=sum(LTCPop),
+           NumDeath=sum(NumDeath),
+            NumDeathLTC=sum(NumDeathLTC),
+            NumDeathwithLTC=sum(NumDeathwithLTC),
+            Total=sum(Total),
+           .groups='drop') %>%
+           mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+           mutate(`LTC_Mortality_Rate`=round(NumDeathLTC/LTCPop *100000,2)) %>% 
+            mutate(`withLTC_Mortality_Rate`=round(NumDeathwithLTC/LTCPop *100000,2)) 
+          
+
+#rates by IMD only-crude rate (to be compared to the standardised rates)
+ IMDEth<-IMDEthAgeGender %>% 
+   group_by(Ethnicity,IMD_Quintile) %>% 
+   summarise(LTCPop=sum(LTCPop),
+            NumDeath=sum(NumDeath),
+            NumDeathLTC=sum(NumDeathLTC),
+            NumDeathwithLTC=sum(NumDeathwithLTC),
+            Total=sum(Total),
+           .groups='drop') %>%
+           mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+           mutate(`LTC_Mortality_Rate`=round(NumDeathLTC/LTCPop *100000,2)) %>% 
+            mutate(`withLTC_Mortality_Rate`=round(NumDeathwithLTC/LTCPop *100000,2)) 
+ 
+ #brewer.pal(n = 8, name = "Dark2")
+
+              
+```
+
+## Crude rate
+
+A crude rate is an unadjusted rate of health outcome before any age standaridsation is applied. We want to look at the number of death per 100,000 population in BSOL.
+
+## Age standardised rate
+
+### Direct Standardisation
+
+Age standardisation is a statistical method used to compare health indicators between populations while accounting for differences in their age structure (the proportion of people in different age groups-countries across the world have significant differences in age structure). It can be used when comparing rates of health outcomes between populations because age can be a significant confounding risk factor for many diseases. Since age structure varies between different areas/groups over time, this adjustment allows us to see how mortality and morbidity are comparable without worrying about the age differences. Age standardisation involves adjusting the observed rates of a particular outcome of a particular group to a standard population with a specific age structure.In this way the two groups are given the same age distribution structure so that a more representitive picture of the characteristics of interest is provided (see @sec-Appendix3 for details on how to calulate direct standardisation manually and the details of the packages that can be used to caluclate it in R).
+
+**Standard Population**
+
+We use the England census data 2021 as a standard population. In this case we are looking at within BSOL variations comparing different cohorts of patients. It is worth noting that we can also use the census data as a benchmark to compare BSOL population to the whole England population, if we have the data. In this case we will require another standard population to age standardise BSOL and England population).
+
+We construct different tables of England population using the census data. Some data can be created on the ONS website \[3\]; we extracted the data for England by LSOA, age and sex to get the breakdown by IMD. Similarly, we extract data for England by ethnicity, age and sex to get the breakdown by Ethnicity. See the age distribution in the Census standard population (figure ref-census age profile).
+
+If we want to get more granular data with IMD and ethnicity, we will need to use MSOA to calculate IMD. The IMD by LSOA are nationally published however only 16% of the data is available due to data protection if we to include ethnicity as an extra dimension. Data with the required details and granularity is available at MSOA level (99% of the data available). IMD scores based on MSOA have been created based on aggregated (average) LSOA person level scores \[1\]. We will only need this data if we use the census data as benchmarking to compare our events in the BSOL population to England's events (if available). For the purpose of using it as a reference population in the standardisation, we only require the age profile (and sex profile if we want to do sex standardisation) of the census population.
+
+We prepare and clean the census reference population (see @sec-Appendix2). We use the Census data by age and by age and sex as our reference populations, however the more granular census tables are prepared to be used for benchmarking or as population denominators in other cases.
+
+To use the census data as benchmark, we need to have a reference population for the age standardisation. The European Standard Population 2013 (ESP 2013) is divided into 19 five-year agebands (0-4,5-9, 10-14...90+). We can use this as a reference population but we need to make equal number of age groups as our BSOL population ( @sec-Appendix2: @tbl-ESP2013).
+
+```{r}
+
+#| label: import standard population data
+#| echo: false
+
+
+#import BSOL death patients 
+# 
+# connection3 <- dbConnect(
+#   odbc(),
+#   Driver = "SQL Server",
+#   Server = "MLCSU-BI-SQL",
+#   Database = "EAT_Reporting_BSOL",
+#   Trusted_Connection = "True"
+#   )
+# 
+# 
+# CensusPop_Eth <- dbGetQuery(
+#   connection3,"SELECT * FROM [EAT_Reporting_BSOL].[Development].[BSOL_1300_Census_National_Age_Data]"
+#   ) %>% as_tibble()
+# 
+# CensusPop_IMD <- dbGetQuery(
+#   connection3,"SELECT * FROM [EAT_Reporting_BSOL].[Development].[BSOL_1300_Census_National_Age_Data_IMD]"
+#   ) %>% as_tibble()
+# 
+# CensusPop_MSOA <- dbGetQuery(
+#   connection3,"SELECT * FROM [EAT_Reporting_BSOL].[Development].[BSOL_1300_Census_National_Age_Data_MSOA]"
+#   ) %>% as_tibble()
+# 
+# 
+# 
+# dbDisconnect(connection3)
+
+# Read RDS data
+
+#CensusPop_Eth<-read_rds_data(CensusPop_Eth.rds)
+#CensusPop_IMD<-read_rds_data(CensusPop_IMD.rds)
+#CensusPop_MSOA<-read_rds_data(CensusPop_MSOA,NULL)
+
+CensusPop_Eth <- readRDS("data/CensusPop_Eth.rds")
+CensusPop_IMD <- readRDS("data/CensusPop_IMD.rds")
+CensusPop_MSOA <- readRDS("data/CensusPop_MSOA.rds")
+
+```
+
+```{r}
+#| echo: false
+
+#sorting out the census table and producing the the population size/proption for the standardisation
+
+CensusPop_Eth<-CensusPop_Eth %>% mutate(AgeBand_3=ifelse (age_101_categories_code <=15,"15 under",
+					                              ifelse(age_101_categories_code>= 16 & age_101_categories_code<=24,"16-24",
+                                    					 ifelse(age_101_categories_code>=25 & age_101_categories_code<=34,"25-34",
+      					                                      ifelse(age_101_categories_code>=35 & age_101_categories_code<=49,"35-49",
+                                                  					ifelse(age_101_categories_code>=50 & age_101_categories_code<=64,"50-64",
+      					                                                   ifelse(age_101_categories_code  >=65,"65+",NA))))))) %>% 
+                                   mutate(EthnicityCode=case_when (str_detect(Ethnic_Group_Higher_Level,'Asian')~1, 
+					                                str_detect(Ethnic_Group_Higher_Level,'Black')~2,
+                                    			str_detect(Ethnic_Group_Higher_Level,'Mixed')~3,
+      					                          str_detect(Ethnic_Group_Higher_Level,'apply')~4,
+                                          str_detect(Ethnic_Group_Higher_Level,'Other')~5,
+      					                          str_detect(Ethnic_Group_Higher_Level,'White')~6,
+					                                TRUE ~ NA)                     #add ethnicity code column for easy match population
+					                                
+					                                 , .before='Ethnic_Group_Higher_Level') %>% 
+                                    mutate(across(Ethnic_Group_Higher_Level,str_replace,'Does not apply','Unknown')) 
+
+#CensusPop_Eth
+
+CensusPop_IMD<-CensusPop_IMD  %>% mutate(AgeBand_3=ifelse (age_6_categories_code==1,"15 under",
+					                              ifelse(age_6_categories_code== 2 ,"16-24",
+                                    					 ifelse(age_6_categories_code==3 ,"25-34",
+      					                                      ifelse(age_6_categories_code==4 ,"35-49",
+                                                  					ifelse(age_6_categories_code==5,"50-64",
+      					                                                   ifelse(age_6_categories_code==6,"65+",NA)))))))
+
+
+#CensusPop_IMD
+
+```
+
+```{r}
+#| echo: false
+
+######################################################Tables to be used for standardisation########################
+
+###############Age standardisation for whole population
+CensusPop_Age<-CensusPop_Eth %>% group_by(AgeBand_3) %>% 
+                                  summarise(Population=sum(observation), #number of people in each group
+                                            Total=sum(CensusPop_Eth$observation), # total number of people
+                                          .groups='drop') %>% 
+                                          mutate(ProportionPop=Population/Total)
+
+# CensusPop_Age%>% flextable() %>% 
+#  set_header_labels( values=c("Age Group","Age specific population","Total population","Proportion of the population" )) %>% 
+#   theme_vanilla() %>%
+#     autofit() 
+################Age,Sex standardisation 
+CensusPop_Age_Sex<-CensusPop_Eth %>% group_by(AgeBand_3,sex_2_categories) %>% 
+                                  summarise(Population=sum(observation), #number of people in each group
+                                            Total=sum(CensusPop_Eth$observation), # total number of people
+                                          .groups='drop') %>% 
+                                                        mutate(ProportionPop=Population/Total)
+# 
+# CensusPop_Age_Sex%>% flextable() %>% 
+#  set_header_labels( values=c("Age Group","Sex","Age specific population","Total population","Proportion of the population" )) %>% 
+#   theme_vanilla() %>%
+#     autofit() 
+
+##################Age by ethnicity
+CensusPop_Age_Eth<-CensusPop_Eth %>% 
+
+  group_by(AgeBand_3,EthnicityCode,Ethnic_Group_Higher_Level) %>% 
+                                        summarise(Population=sum(observation), #number of people in each group
+                                                  Total=sum(CensusPop_Eth$observation), # total number of people
+                                                  .groups='drop') %>% 
+                                                          mutate(ProportionPop=Population/Total)
+
+# CensusPop_Age_Eth%>% flextable() %>% 
+#  set_header_labels( values=c("Age Group","Ethnicity code","Ethnicity","Age/Ethnicity Specific population","Total population","Proportion of the population" )) %>% 
+#   theme_vanilla() %>%
+#     autofit() 
+
+#################Age, sex by ethnicity
+CensusPop_Age_Sex_Eth<-CensusPop_Eth %>% 
+
+group_by(AgeBand_3,sex_2_categories,EthnicityCode,Ethnic_Group_Higher_Level) %>% 
+                                        summarise(Population=sum(observation), #number of people in each group
+                                                  Total=sum(CensusPop_Eth$observation), # total number of people
+                                                  .groups='drop') %>% 
+                                                          mutate(ProportionPop=Population/Total)
+
+
+
+#                       
+# CensusPop_Age_Sex_Eth %>% flextable() %>% 
+#  set_header_labels( values=c("Age Group","Sex","Ethnicity code","Ethnicity","Age/Sex/Ethnicity Specific population","Total population","Proportion of the population" )) %>% 
+#   theme_vanilla() %>%
+#     autofit() 
+
+###################Age by IMD
+CensusPop_Age_IMD<-CensusPop_IMD %>% 
+  filter(!is.na(IMD_Quintile)) %>% 
+  group_by(AgeBand_3,IMD_Quintile) %>% 
+                                        summarise(Population=sum(observation), #number of people in each group
+                                                  Total=sum(CensusPop_IMD$observation), # total number of people
+                                                  .groups='drop') %>% 
+                                                    mutate(ProportionPop=Population/Total)
+
+# CensusPop_Age_IMD%>% flextable() %>% 
+#  set_header_labels( values=c("Age Group","IMD Quintile","Age/IMD Specific population","Total population","Proportion of the population" )) %>% 
+#   theme_vanilla() %>%
+#     autofit()
+
+###################Age,Sex by IMD
+CensusPop_Age_Sex_IMD<-CensusPop_IMD %>% 
+ filter(!is.na(IMD_Quintile)) %>% 
+ group_by(AgeBand_3,sex_2_categories,IMD_Quintile) %>% 
+                                        summarise(Population=sum(observation), #number of people in each group
+                                                  Total=sum(CensusPop_IMD$observation), # total number of people
+                                                  .groups='drop') %>% 
+                                                    mutate(ProportionPop=Population/Total)
+
+# CensusPop_Age_Sex_IMD%>% flextable() %>% 
+#  set_header_labels( values=c("Age Group","Sex","IMD Quintile","Age/Sex/IMD Specific population","Total population","Proportion of the population" )) %>% 
+#   theme_vanilla() %>%
+#     autofit()
+
+```
+
+See below the age profile of standard populations used (@fig-StandardPop):
+
+```{r}
+
+#esp2013
+
+
+t_esp2013<-tibble(CensusPop_Age[ ,1],
+  c(sum(esp2013[1:3]),sum(esp2013[4:6]),sum(esp2013[7:9]),sum(esp2013[10:12]),sum(esp2013[13:15]),sum(esp2013[16:19]))
+) %>% 
+  rename("Age Band"="AgeBand_3", "Population"=`c(...)`)
+
+#phe_dsr
+
+## will need death data and joining census IMD and Age with BSOL IMD and Age
+
+#CensusPop_Age_IMD[,1:2]
+#IMDAge
+#Census_BSOL_IMD_Age<-rbind(CensusPop_Age_IMD,
+                           # IMDAge
+  
+  
+#)
+
+```
+
+```{r fig.height=2.5, fig.width=6}
+
+##Age profile of census
+ p_PopAge_Census<- ggplot(CensusPop_Age,aes(x=AgeBand_3,y=ProportionPop*100))+
+  geom_bar(stat="identity", fill="#1B9E77")+
+  labs( x="Age group",y="Percentage", title="Age Profile of Census population") +
+   theme_minimal()+
+   theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=8),
+        axis.title=element_text(size=8),
+        plot.title = element_text(size=11),
+        strip.text = element_text(size=8),
+        legend.title = element_text(size=8),
+        legend.text=  element_text(size=8),
+        legend.key.size =unit(0.3,'cm' ))
+
+##Age profile of E
+
+AgeProfile_esp2013<-t_esp2013 %>% 
+  mutate(
+            totalPop=sum(Population)) %>% 
+            
+            mutate(PercentagePop=round(Population/totalPop *100,2)) 
+
+p_PopAge_esp2013<- ggplot(AgeProfile_esp2013,aes(x=`Age Band`,y=PercentagePop))+
+  geom_bar(stat="identity", fill="#1B9E77")+
+  labs( x="Age group",y="Percentage", title="Age Profile of European Standard population") +
+   theme_minimal()+
+   theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=8),
+        axis.title=element_text(size=8),
+        plot.title = element_text(size=11),
+        strip.text = element_text(size=8),
+        legend.title = element_text(size=8),
+        legend.text=  element_text(size=8),
+        legend.key.size =unit(0.3,'cm' ))
+
+
+
+ 
+ 
+```
+
+```{r fig.height=2.5, fig.width=6}
+#| label: fig-StandardPop
+#| fig-cap: Age profile of standard populations
+
+
+grid.arrange(p_PopAge_Census,p_PopAge_esp2013,ncol=2)
+
+
+```
+
+**Age standardisation calculation**
+
+In this document we use the direct standardisation for within population groups comparisons, but the direct standardisation can also be used to compare different populations for which we know the number of the at-risk population and the number of events (`{r} params$LTC` population as well as death in this case).
+
+### Crude and age standardised prevalence and mortality rates by IMD
+
+```{r}
+#| echo: true
+#| label: Age standardisation IMD using dsr package
+
+
+
+##Standardisation using DSR package
+##dsr package installation (uncomment)
+
+#packageurl <- "https://cran.r-project.org/src/contrib/Archive/dsr/dsr_0.2.2.tar.gz"
+#pkgFile<-"dsr_0.2.2.tar.gz"
+#download.file(url=packageurl,destfile = pkgFile)
+#install.packages("frailtypack")
+#install.packages(pkgFile, repos=NULL, type="source")
+
+Standard_Pop<-CensusPop_Age %>% select(AgeBand_3,Population) %>% 
+  rename(pop=Population)
+
+
+
+PopLTC_IMD_DSR<-dsr::dsr(data=IMDAge,       #table containing number of events and population
+                            event=LTCPop,        #column number of events
+                            fu=Total,               #column population
+                            subgroup = IMD_Quintile,#groups to be compared
+                            AgeBand_3,              #variable to which we would like to standardise
+                            refdata = Standard_Pop, #reference pop
+                            method="gamma",         #method to calculate 95% CI
+                            sig=0.95,               #significant level
+                            mp=100000,              #rate per 100,000 population
+                            decimals=2)             #decimal points
+
+
+```
+
+**Crude and age standardised `{r} params$LTC` prevalence by IMD**
+
+```{r}
+#| label: tbl-IMDAgeStd
+#| tbl-cap: !expr glue::glue("Prevalence and age-standardised prevalence of {params$LTC} in BSOL population by IMD")
+
+
+
+ #"#1B9E77" "#D95F02" "#7570B3" "#E7298A" "#66A61E" "#E6AB02" "#A6761D" "#666666"
+PopLTC_IMD_DSR %>% rename(`IMD quintile`=Subgroup) %>% 
+formattable(.,
+            list(`IMD quintile`=formattable::formatter("span",style=~style(color="black",font.weight="bold")),
+                 `Crude Rate (per 1e+05)`=formattable::color_tile("#f6fef6", "#1B9E77" ),#"#FDE725FF","#27AD81FF")
+                 `Std Rate (per 1e+05)`=formattable::color_tile("#f6fef6", "#1B9E77" )
+            ))
+# %>% 
+#   knitr::kable( caption = "Crude and age standardised mortality rates by IMD") %>% 
+#   kable_styling()
+```
+
+```{r fig.height=2.5, fig.width=10}
+
+
+
+sp<-PopLTC_IMD_DSR %>% 
+  select(Subgroup,`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`) %>% #,`95% LCL (Crude)`,`95% UCL (Crude)`,`95% LCL (Std)`,`95% UCL (Std)` ) %>% 
+  as_tibble() %>% 
+  pivot_longer(
+    cols=c(`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`),
+    names_to="Rate"
+  )
+s_LCLp<-PopLTC_IMD_DSR %>% 
+  select(Subgroup,`95% LCL (Crude)`,`95% LCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+  
+s_UCLp<-PopLTC_IMD_DSR %>% 
+  select(Subgroup,`95% UCL (Crude)`,`95% UCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+
+
+
+ppp<-ggplot(sp,aes(x=Subgroup,y=value, fill=Rate))+
+  geom_bar(stat="identity",position="dodge",width=0.5)+
+scale_fill_manual(values =c("#1B9E77","#B2BABB"))+
+  geom_errorbar(aes(x=Subgroup,ymin=s_LCLp$value,ymax=s_UCLp$value),position=position_dodge(0.5), width=0.2,size=0.5)+
+  labs( x="IMD Quintiles",y="rate per 100,000", title=paste0(LTCPar," population")) +
+   theme_minimal() +
+   theme(axis.text.x = element_text(),
+        axis.text=element_text(size=8),
+        axis.title.x =element_text(size=8),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=10),
+        strip.text = element_blank(),
+        legend.title = element_blank(),
+        legend.text=  element_text(size=6),
+        legend.key.size =unit(0.2,'cm'),
+        legend.position = "top")
+  
+
+
+
+
+```
+
+```{r}
+#| echo: true
+##| label: Age standardisation IMD using dsr package
+
+
+##Standardisation using DSR package
+##dsr package installation (uncomment)
+
+#packageurl <- "https://cran.r-project.org/src/contrib/Archive/dsr/dsr_0.2.2.tar.gz"
+#pkgFile<-"dsr_0.2.2.tar.gz"
+#download.file(url=packageurl,destfile = pkgFile)
+#install.packages("frailtypack")
+#install.packages(pkgFile, repos=NULL, type="source")
+
+
+MortalityRate_IMD_DSR<-dsr::dsr(data=IMDAge,       #table containing number of events and population
+                            event=NumDeathwithLTC,        #column number of events
+                            fu=LTCPop,               #column population
+                            subgroup = IMD_Quintile,#groups to be compared
+                            AgeBand_3,              #variable to which we would like to standardise
+                            refdata = Standard_Pop, #reference pop
+                            method="gamma",         #method to calculate 95% CI
+                            sig=0.95,               #significant level
+                            mp=100000,              #rate per 100,000 population
+                            decimals=2)             #decimal points
+
+
+```
+
+**Crude and age standardised mortality rates in the `{r} params$LTC` population by IMD**
+
+```{r}
+#| label: tbl-IMDAgeStdwitLTC
+#| tbl-cap: !expr glue::glue("Mortality rates in the {params$LTC} population by IMD")
+
+ #"#1B9E77" "#D95F02" "#7570B3" "#E7298A" "#66A61E" "#E6AB02" "#A6761D" "#666666"
+MortalityRate_IMD_DSR %>% rename(`IMD quintile`=Subgroup) %>% 
+formattable(.,
+            list(`IMD quintile`=formattable::formatter("span",style=~style(color="black",font.weight="bold")),
+                 `Crude Rate (per 1e+05)`=formattable::color_tile("#FDEBD0", "#D95F02" ),#"#FDE725FF","#27AD81FF")
+                 `Std Rate (per 1e+05)`=formattable::color_tile("#FDEBD0", "#D95F02" )
+            ))
+# %>% 
+#   knitr::kable( caption = "Crude and age standardised mortality rates by IMD") %>% 
+#   kable_styling()
+```
+
+```{r fig.height=2.5, fig.width=10}
+
+
+
+s<-MortalityRate_IMD_DSR %>% 
+  select(Subgroup,`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`) %>% #,`95% LCL (Crude)`,`95% UCL (Crude)`,`95% LCL (Std)`,`95% UCL (Std)` ) %>% 
+  as_tibble() %>% 
+  pivot_longer(
+    cols=c(`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`),
+    names_to="Rate"
+  )
+s_LCL<-MortalityRate_IMD_DSR %>% 
+  select(Subgroup,`95% LCL (Crude)`,`95% LCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+  
+s_UCL<-MortalityRate_IMD_DSR %>% 
+  select(Subgroup,`95% UCL (Crude)`,`95% UCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+
+
+
+p<-ggplot(s,aes(x=Subgroup,y=value, fill=Rate))+
+  geom_bar(stat="identity",position="dodge",width=0.5)+
+scale_fill_manual(values =c("#D95F02","#B2BABB"))+
+  geom_errorbar(aes(x=Subgroup,ymin=s_LCL$value,ymax=s_UCL$value),position=position_dodge(0.5), width=0.2,size=0.5)+
+  labs( x="IMD Quintiles",y="rate per 100,000", title=paste0("Mortality with ",LTCPar)) +
+   theme_minimal() +
+   theme(axis.text.x = element_text(),
+        axis.text=element_text(size=8),
+        axis.title.x =element_text(size=8),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=10),
+        strip.text = element_blank(),
+        legend.title = element_blank(),
+        legend.text=  element_text(size=6),
+        legend.key.size =unit(0.2,'cm'),
+        legend.position = "top")
+  
+
+
+
+
+```
+
+```{r}
+#LTC-cause Death by IMD
+
+MortalityRateLTC_IMD_DSR<-dsr::dsr(data=IMDAge,       #table containing number of events and population
+                            event=NumDeathLTC,        #column number of events
+                            fu=LTCPop,               #column population
+                            subgroup = IMD_Quintile,#groups to be compared
+                            AgeBand_3,              #variable to which we would like to standardise
+                            refdata = Standard_Pop, #reference pop
+                            method="gamma",         #method to calculate 95% CI
+                            sig=0.95,               #significant level
+                            mp=100000,              #rate per 100,000 population
+                            decimals=2)             #decimal points
+
+
+```
+
+\newpage
+
+**Crude and age standardised mortality rates caused by `{r} params$LTC` by IMD**
+
+```{r}
+#| label: tbl-IMDAgeStdLTC
+#| tbl-cap: !expr glue::glue("Mortality rates caused by {params$LTC} by IMD")
+
+
+MortalityRateLTC_IMD_DSR %>% rename(`IMD quintile`=Subgroup) %>% 
+formattable(.,
+
+ list(`IMD quintile`=formattable::formatter("span",style=~style(color="black",font.weight="bold")),
+                `Crude Rate (per 1e+05)`=formattable::color_tile("#F4ECF7", "#7570B3"),#"#FDE725FF","#27AD81FF")
+                `Std Rate (per 1e+05)`=formattable::color_tile("#F4ECF7", "#7570B3")
+      
+ ))
+# %>% 
+#   kable("html", escape = F, caption = "Crude and age standardised avoidable mortality rates by IMD", align = c("l", "r", "r", "r", "r")) %>% 
+#   kable_styling()
+
+
+```
+
+```{r fig.height=2.5, fig.width=8}
+
+sAv<-MortalityRateLTC_IMD_DSR %>% 
+  select(Subgroup,`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`) %>% #,`95% LCL (Crude)`,`95% UCL (Crude)`,`95% LCL (Std)`,`95% UCL (Std)` ) %>% 
+  as_tibble() %>% 
+  pivot_longer(
+    cols=c(`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`),
+    names_to="Rate"
+  )
+s_LCL_Av<-MortalityRateLTC_IMD_DSR %>% 
+  select(Subgroup,`95% LCL (Crude)`,`95% LCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+  
+s_UCL_Av<-MortalityRateLTC_IMD_DSR %>% 
+  select(Subgroup,`95% UCL (Crude)`,`95% UCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+
+pLTC<-ggplot(sAv,aes(x=Subgroup,y=value, fill=Rate))+
+  geom_bar(stat="identity",position="dodge",width=0.5)+#geom_bar(stat="identity",position=position_dodge(0.8),width=0.7)+
+scale_fill_manual(values =c("#7570B3","#B2BABB"))+
+  #geom_errorbar(aes(x=Subgroup,ymin=s_LCL_Av$value,ymax=s_UCL_Av$value),position=position_dodge(0.8), width=0.7,size=0.2)+
+  geom_errorbar(aes(x=Subgroup,ymin=s_LCL_Av$value,ymax=s_UCL_Av$value),position=position_dodge(0.5), width=0.2,size=0.5)+
+  labs( x="IMD Quintiles",y="rate per 100,000", title=paste0("Mortality rate with ",LTCPar," as the cause")) +
+   theme_minimal() +
+   theme(axis.text.x = element_text(),
+        axis.text=element_text(size=8),
+        axis.title.x =element_text(size=8),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=10),
+        strip.text = element_blank(),
+        legend.title = element_blank(),
+        legend.text=  element_text(size=6),
+        legend.key.size =unit(0.2,'cm' ),
+        legend.position = "top")
+
+
+
+
+
+
+```
+
+```{r fig.height=3, fig.width=10}
+#| label: fig-RateIMD
+#| fig-cap: Crude and age standardised mortality rates by IMD
+
+
+
+grid.arrange(ppp,p,pLTC,ncol=3)
+
+
+```
+
+In @tbl-IMDAgeStd above we see that while the prevalence of `{r} params$LTC` decreased with deprivation, the age-standardised `{r} params$LTC` prevalence increased.The most deprived had a lowest crude `{r} params$LTC` mortality rate but the highest age-standardised mortality rate in the `{r} params$LTC` (orange/grey). The highest age-standardised mortality rate cause by `{r} params$LTC` (purple/grey) is the IMD=3 group and the least is in the least deprived group (@fig-RateIMD).
+
+### Crude and age standardised prevalence and mortality rates by Ethnicity
+
+```{r}
+
+
+##| label: Age standardisation Ethnicity using dsr package
+
+PopLTC_Eth_DSR<-dsr::dsr(data=EthAge,       #table containing number of events and population
+                            event=LTCPop,        #column number of events
+                            fu=Total,               #column population
+                            subgroup = Ethnicity,#groups to be compared
+                            AgeBand_3,              #variable to which we would like to standardise
+                            refdata = Standard_Pop, #reference pop
+                            method="gamma",         #method to calculate 95% CI
+                            sig=0.95,               #significant level
+                            mp=100000,              #rate per 100,000 population
+                            decimals=2)             #decimal points
+
+```
+
+**Crude and age standardised `{r} params$LTC` prevalence by Ethnicity**
+
+```{r}
+## | label: tbl-EthAgeStd
+## | tbl-cap: Mortality rates by ethnicity
+
+# MortalityRate_IMD_DSR%>% flextable() %>% 
+#  set_header_labels( values=c("IMD Quintile","Numerator","Denominator","Crude Rate (per 100,00)","95% LCL (Crude)","95% UCL (Crude)","Std (per 100,000)","95% LCL (Std)","95% UCL (Std)" )) %>% 
+#   theme_vanilla() %>%
+#     autofit() 
+# MortalityRate_IMD_DSR$`Std Rate (per 1e+05)`
+# #c("#440154FF","#2A788EFF"))
+
+PopLTC_Eth_DSR %>% rename(`Ethnicity`=Subgroup) %>% 
+formattable(.,
+            list(`Ethnicity`=formattable::formatter("span",style=~style(color="black",font.weight="bold")),
+                 `Crude Rate (per 1e+05)`=formattable::color_tile("#f6fef6", "#1B9E77" ),#"#FDE725FF","#27AD81FF")
+                 `Std Rate (per 1e+05)`=formattable::color_tile("#f6fef6", "#1B9E77" )
+            ))
+# %>% 
+#   kable("html", escape = F, caption = "Crude and age standardised mortality rates by Ethnicity", align = c("l", "r", "r", "r", "r")) %>% 
+#   kable_styling()
+
+
+```
+
+```{r fig.height=3, fig.width=8}
+
+
+
+spe<-PopLTC_Eth_DSR %>% 
+  select(Subgroup,`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`) %>% #,`95% LCL (Crude)`,`95% UCL (Crude)`,`95% LCL (Std)`,`95% UCL (Std)` ) %>% 
+  as_tibble() %>% 
+  pivot_longer(
+    cols=c(`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`),
+    names_to="Rate"
+  )
+s_LCLpe<-PopLTC_Eth_DSR %>% 
+  select(Subgroup,`95% LCL (Crude)`,`95% LCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+  
+s_UCLpe<-PopLTC_Eth_DSR %>% 
+  select(Subgroup,`95% UCL (Crude)`,`95% UCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+
+
+
+pp<-ggplot(spe,aes(x=Subgroup,y=value, fill=Rate))+
+  geom_bar(stat="identity",position="dodge",width=0.7)+
+scale_fill_manual(values =c("#1B9E77","#B2BABB"))+
+  geom_errorbar(aes(x=Subgroup,ymin=s_LCLpe$value,ymax=s_UCLpe$value),position=position_dodge(0.7), width=0.2,size=0.5)+
+  labs( x="Ethnicity",y="rate per 100,000", title=paste0(LTCPar," population")) +
+   theme_minimal() +
+  coord_flip()+
+   theme(axis.text.x = element_text(size=6),
+        axis.text=element_text(size=8),
+        axis.title.x =element_text(size=8),
+        axis.title.y=element_blank(),
+        axis.text.y=element_text(size=6),
+        plot.title = element_text(size=10),
+        strip.text = element_blank(),
+        legend.title = element_blank(),
+        legend.text=  element_text(size=6),
+        legend.key.size =unit(0.2,'cm'),
+        legend.position = "top")
+  
+
+
+```
+
+```{r}
+
+
+##| label: Age standardisation Ethnicity using dsr package
+
+MortalityRate_Eth_DSR<-dsr::dsr(data=EthAge,       #table containing number of events and population
+                            event=NumDeathwithLTC,        #column number of events
+                            fu=LTCPop,               #column population
+                            subgroup = Ethnicity,#groups to be compared
+                            AgeBand_3,              #variable to which we would like to standardise
+                            refdata = Standard_Pop, #reference pop
+                            method="gamma",         #method to calculate 95% CI
+                            sig=0.95,               #significant level
+                            mp=100000,              #rate per 100,000 population
+                            decimals=2)             #decimal points
+
+```
+
+**Crude and age standardised mortality rates in the `{r} params$LTC` population by Ethnicity**
+
+```{r}
+## | label: tbl-EthAgeStd
+## | tbl-cap: Mortality rates by ethnicity
+
+# MortalityRate_IMD_DSR%>% flextable() %>% 
+#  set_header_labels( values=c("IMD Quintile","Numerator","Denominator","Crude Rate (per 100,00)","95% LCL (Crude)","95% UCL (Crude)","Std (per 100,000)","95% LCL (Std)","95% UCL (Std)" )) %>% 
+#   theme_vanilla() %>%
+#     autofit() 
+# MortalityRate_IMD_DSR$`Std Rate (per 1e+05)`
+# #c("#440154FF","#2A788EFF"))
+
+MortalityRate_Eth_DSR %>% rename(`Ethnicity`=Subgroup) %>% 
+formattable(.,
+            list(`Ethnicity`=formattable::formatter("span",style=~style(color="black",font.weight="bold")),
+                 `Crude Rate (per 1e+05)`=formattable::color_tile("#FDEBD0", "#D95F02" ),#"#FDE725FF","#27AD81FF")
+                 `Std Rate (per 1e+05)`=formattable::color_tile("#FDEBD0", "#D95F02" )
+            ))
+# %>% 
+#   kable("html", escape = F, caption = "Crude and age standardised mortality rates by Ethnicity", align = c("l", "r", "r", "r", "r")) %>% 
+#   kable_styling()
+
+
+```
+
+```{r fig.height=3, fig.width=8}
+
+
+
+s<-MortalityRate_Eth_DSR %>% 
+  select(Subgroup,`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`) %>% #,`95% LCL (Crude)`,`95% UCL (Crude)`,`95% LCL (Std)`,`95% UCL (Std)` ) %>% 
+  as_tibble() %>% 
+  pivot_longer(
+    cols=c(`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`),
+    names_to="Rate"
+  )
+s_LCL<-MortalityRate_Eth_DSR %>% 
+  select(Subgroup,`95% LCL (Crude)`,`95% LCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+  
+s_UCL<-MortalityRate_Eth_DSR %>% 
+  select(Subgroup,`95% UCL (Crude)`,`95% UCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+
+
+
+p<-ggplot(s,aes(x=Subgroup,y=value, fill=Rate))+
+  geom_bar(stat="identity",position="dodge",width=0.7)+
+scale_fill_manual(values =c("#D95F02","#B2BABB"))+
+  geom_errorbar(aes(x=Subgroup,ymin=s_LCL$value,ymax=s_UCL$value),position=position_dodge(0.7), width=0.2,size=0.5)+
+  labs( x="Ethnicity",y="rate per 100,000", title=paste0("Mortality with ",LTCPar)) +
+   theme_minimal() +
+  coord_flip()+
+   theme(axis.text.x = element_text(size=6),
+        axis.text=element_text(size=8),
+        axis.title.x =element_text(size=8),
+        axis.title.y=element_blank(),
+        axis.text.y=element_text(size=6),
+        plot.title = element_text(size=10),
+        strip.text = element_blank(),
+        legend.title = element_blank(),
+        legend.text=  element_text(size=6),
+        legend.key.size =unit(0.2,'cm'),
+        legend.position = "top")
+  
+
+
+```
+
+```{r}
+
+
+#Avoidable Death
+
+MortalityRateLTC_Eth_DSR<-dsr::dsr(data=EthAge,       #table containing number of events and population
+                            event=NumDeathLTC,        #column number of events
+                            fu=LTCPop,               #column population
+                            subgroup = Ethnicity,#groups to be compared
+                            AgeBand_3,              #variable to which we would like to standardise
+                            refdata = Standard_Pop, #reference pop
+                            method="gamma",         #method to calculate 95% CI
+                            sig=0.95,               #significant level
+                            mp=100000,              #rate per 100,000 population
+                            decimals=2)             #decimal points
+
+
+```
+
+\newpage
+
+**Crude and age standardised mortality rates caused by `{r} params$LTC` by Ethnicity**
+
+```{r}
+###| label: tbl-AvEthAgeStd
+###| tbl-cap: Avoidable mortality rates by Ethnicity
+
+
+MortalityRateLTC_Eth_DSR %>% rename(`Ethnicity`=Subgroup) %>% 
+formattable(.,
+
+ list(`Ethnicity`=formattable::formatter("span",style=~style(color="black",font.weight="bold")),
+                `Crude Rate (per 1e+05)`=formattable::color_tile("#F4ECF7", "#7570B3"),#"#FDE725FF","#27AD81FF")
+                `Std Rate (per 1e+05)`=formattable::color_tile("#F4ECF7", "#7570B3")
+      
+ ))
+# %>% 
+#   kable("html", escape = F, caption = "Crude and age standardised avoidable mortality rates by Ethnicity", align = c("l", "r", "r", "r", "r")) %>% 
+#   kable_styling()
+
+
+```
+
+```{r fig.height=3, fig.width=8}
+
+
+sAv<-MortalityRateLTC_Eth_DSR %>% 
+  select(Subgroup,`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`) %>% #,`95% LCL (Crude)`,`95% UCL (Crude)`,`95% LCL (Std)`,`95% UCL (Std)` ) %>% 
+  as_tibble() %>% 
+  pivot_longer(
+    cols=c(`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`),
+    names_to="Rate"
+  )
+s_LCL_Av<-MortalityRateLTC_Eth_DSR %>% 
+  select(Subgroup,`95% LCL (Crude)`,`95% LCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+  
+s_UCL_Av<-MortalityRateLTC_Eth_DSR %>% 
+  select(Subgroup,`95% UCL (Crude)`,`95% UCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-1)
+
+pLTC<-ggplot(sAv,aes(x=Subgroup,y=value, fill=Rate))+
+  geom_bar(stat="identity",position="dodge",width=0.7)+#geom_bar(stat="identity",position=position_dodge(0.8),width=0.7)+
+scale_fill_manual(values =c("#7570B3","#B2BABB"))+
+  #geom_errorbar(aes(x=Subgroup,ymin=s_LCL_Av$value,ymax=s_UCL_Av$value),position=position_dodge(0.8), width=0.7,size=0.2)+
+  geom_errorbar(aes(x=Subgroup,ymin=s_LCL_Av$value,ymax=s_UCL_Av$value),position=position_dodge(0.7), width=0.2,size=0.5)+
+  labs( x="Ethnicity",y="rate per 100,000", title=paste0("Mortality rate with ",LTCPar, "as a cause")) +
+   theme_minimal() +
+  coord_flip()+
+   theme(axis.text.x = element_text(size=6),
+        axis.text=element_text(size=8),
+        axis.title.x =element_text(size=8),
+        axis.title.y=element_blank(),
+        axis.text.y=element_text(size=6),
+        plot.title = element_text(size=10),
+        strip.text = element_blank(),
+        legend.title = element_blank(),
+        legend.text=  element_text(size=6),
+        legend.key.size =unit(0.2,'cm' ),
+        legend.position = "top")
+
+
+
+
+```
+
+```{r fig.height=3, fig.width=10}
+#| label: fig-RateEth
+#| fig-cap: Crude and age standardised mortality rates by ethnicity
+
+grid.arrange(pp,p,pLTC,ncol=3)
+
+```
+
+The prevalence of `{r} params$LTC` is highest in the white population, however after age-standardisation, the prevelance of `{r} params$LTC` is highest in the Asian or Asian British group (green/grey), followed by the white group. Age standardised mortality is highest in the unknown group. People from 16-49 of age account form more than 70% of the unknown population (BSOL Age profile by ethnicity - green); consequently the age-standardised rates is much higher than the corresponding crude rate because the population is younger relative to the other ethnic population (@fig-RateEth).
+
+**Benchmarking the census data against the BSOL population:**
+
+[*Awaiting death data by IMD/Ethnicity for England population*]{style="color:grey"}
+
+\newpage
+
+### Crude and age standardised prevalence and mortality rates by IMD and ethnicity
+
+Because we want to compare IMD and ethnicity groups, we use the **PHEIndicatormethods** package (see @sec-Appendix3 for details on standaridisation methods and packages used). It has the option of having two units for comparison. We use @tbl-IMDEthAge table which includes ethnicity, IMD combination to be compared and the CVD prevalence (CVD population). As the standard population we use @tbl-CensusAge. We join those two tables by age group
+
+**Crude and age standardised `{r} params$LTC` prevalence by IMD and ethnicity**
+
+```{r}
+#| echo: false
+#| label: Age standardisation IMD and Ethnicity using dsr package
+
+##using the dsr package and function, I could not get it to work with two subgroups (so I combined them in one variable)
+
+IMDEthAge$IMDEthnicityGroup <-  paste(IMDEthAge$Ethnicity, IMDEthAge$IMD_Quintile)
+
+
+
+PopLTC_IMD_Eth_DSR<- dsr::dsr(data=IMDEthAge,       #table containing number of events and population
+                            event=LTCPop,        #column number of events
+                            fu=Total,               #column population
+                            subgroup = IMDEthnicityGroup,#groups to be compared
+                            
+                            AgeBand_3,              #variable to which we would like to standardise
+                            refdata = Standard_Pop, #reference pop
+                            method="gamma",         #method to calculate 95% CI
+                            sig=0.95,               #significant level
+                            mp=100000,              #rate per 100,000 population
+                            decimals=2)             #decimal points
+
+
+```
+
+```{r}
+##dsr using the pheIndicator
+
+PopLTC_IMD_Eth_PHEind_dsr<-IMDEthAge %>% 
+          left_join(CensusPop_Age,by="AgeBand_3")%>% 
+               group_by(Ethnicity, IMD_Quintile) %>%
+                     phe_dsr( x = LTCPop,
+                     n = Total.x,
+                     stdpop  = Population,
+                     stdpoptype = "field",
+                     type = "full",         
+                     multiplier = 100000) %>% select("Ethnicity","IMD_Quintile","value","lowercl","uppercl") %>% 
+                mutate(Subgroup=paste(Ethnicity,IMD_Quintile))
+
+##calculating the crude rate and the CI
+PopLTC_IMD_Eth_PHEind_Crude<-IMDEthAge %>% 
+                  group_by(Ethnicity, IMD_Quintile) %>%
+                      phe_proportion(.,LTCPop,Total,multiplier = 100000) %>% select("Ethnicity","IMD_Quintile","LTCPop","Total","value","lowercl","uppercl")
+
+
+PopLTC_IMD_Eth<-PopLTC_IMD_Eth_PHEind_Crude %>% 
+            left_join(PopLTC_IMD_Eth_PHEind_dsr,by=c("Ethnicity","IMD_Quintile"))
+
+
+```
+
+For the detailed table of crude and standardised `{r} params$LTC` prevalence by IMD and ethnicity see @sec-Appendix4.
+
+```{r}
+##| label: tbl-IMDEthAgeStd
+##| tbl-cap: !expr glue::glue("Prevalence and age-standardised prevalence of {params$LTC} in BSOL population by IMD")
+
+
+
+ #"#1B9E77" "#D95F02" "#7570B3" "#E7298A" "#66A61E" "#E6AB02" "#A6761D" "#666666"
+PopLTC_IMD_Eth2<-PopLTC_IMD_Eth %>% rename(`Numerator`=LTCPop,
+                          Denominator=Total,
+                          `Crude Rate (per 1e+05)`=`value.x`,
+                          `95% LCL (Crude)`=`lowercl.x`,
+                          `95% UCL (Crude)`=`uppercl.x`,
+                          `Std Rate (per 1e+05)`=`value.y`,
+                          `95% LCL (Std)`=`lowercl.y`,
+                          `95% UCL (Std)`=`uppercl.y`) %>% 
+formattable(.,
+            list(`Ethnicity`=formattable::formatter("span",style=~style(color="black",font.weight="bold")),
+                 `Crude Rate (per 1e+05)`=formattable::color_tile("#f6fef6", "#1B9E77" ),#"#FDE725FF","#27AD81FF")
+                 `Std Rate (per 1e+05)`=formattable::color_tile("#f6fef6", "#1B9E77" )
+            ))
+# %>% 
+#   knitr::kable( caption = "Crude and age standardised mortality rates by IMD") %>% 
+#   kable_styling()
+
+
+```
+
+```{r fig.height=4, fig.width=8}
+
+
+
+sp_I_E<-PopLTC_IMD_Eth2 %>% 
+  select(Ethnicity,IMD_Quintile,`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`) %>% #,`95% LCL (Crude)`,`95% UCL (Crude)`,`95% LCL (Std)`,`95% UCL (Std)` ) %>% 
+  as_tibble() %>% 
+  pivot_longer(
+    cols=c(`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`),
+    names_to="Rate"
+  )
+s_LCLp_I_E<-PopLTC_IMD_Eth2 %>% 
+  select(Ethnicity,IMD_Quintile,`95% LCL (Crude)`,`95% LCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(cols=c(`95% LCL (Crude)`,`95% LCL (Std)`),
+    names_to="LCL")
+  
+s_UCLp_I_E<-PopLTC_IMD_Eth2 %>% 
+  select(Ethnicity,IMD_Quintile,`95% UCL (Crude)`,`95% UCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(cols=c(`95% UCL (Crude)`,`95% UCL (Std)`),
+    names_to="UCL")
+
+
+#LTCPar
+
+
+ppp<-ggplot(sp_I_E,aes(x=IMD_Quintile,y=value, fill=Rate))+
+  geom_bar(stat="identity",position="dodge",width=0.5)+
+scale_fill_manual(values =c("#1B9E77","#B2BABB"))+
+  geom_errorbar(aes(x=IMD_Quintile,ymin=s_LCLp_I_E$value,ymax=s_UCLp_I_E$value),position=position_dodge(0.5), width=0.2,size=0.5)+
+  labs( x="IMD_Quintile",y="rate per 100,000", title=paste0("CVD population")) +
+  facet_wrap(~Ethnicity,nrow=2 )+#theme(panel.spacing=unit(3,"lines"))+
+   theme_minimal() +
+   theme(axis.text.x = element_text(),
+        axis.text=element_text(size=6),
+        axis.title.x =element_text(size=6),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=8),
+        strip.text = element_text(size=6),
+        legend.title = element_blank(),
+        legend.text=  element_text(size=6),
+        legend.key.size =unit(0.2,'cm'),
+        legend.position = "top",
+        panel.spacing=unit(3,"lines"))
+  
+ppp
+
+
+
+```
+
+```{r tbl.height=2,tbl.width=10}
+#| label: tbl-IMDEthPrev
+#| tbl-cap: !expr glue::glue("Prevalence of {params$LTC} in BSOL population by IMD and ethnicity")
+PopLTC_IMD_Eth2 %>%
+  group_by(Ethnicity) %>%
+  mutate(
+    `Crude Rate (per 1e+05)` =  round(`Crude Rate (per 1e+05)`,1),
+     Slope = spk_chr( `Crude Rate (per 1e+05)`, type="line",
+                     chartRangeMin=min(IMD_Quintile), chartRangeMax=max(IMD_Quintile)
+    )
+  ) %>%
+  select(Ethnicity, IMD_Quintile, `Crude Rate (per 1e+05)`, Slope ) %>%
+ # rename_at("Ethnic_Grouping_Census", ~"Ethnicity") %>%
+  pivot_wider(values_from = `Crude Rate (per 1e+05)` , names_from = IMD_Quintile) %>%
+  formattable(list(area(col = 3:7) ~ color_tile("#f6fef6", "#1B9E77" ))) %>%
+  formattable::as.htmlwidget() %>%
+  spk_add_deps()
+
+
+```
+
+```{r tbl.height=2,tbl.width=10}
+#| label: tbl-IMDEthStdPrev
+#| tbl-cap: !expr glue::glue("Age standardised prevalence of {params$LTC} in BSOL population by IMD and ethnicity")
+PopLTC_IMD_Eth2 %>%
+  group_by(Ethnicity) %>%
+  mutate(
+    `Std Rate (per 1e+05)` =  round(`Std Rate (per 1e+05)`,1),
+     Slope = spk_chr( `Std Rate (per 1e+05)`, type="line",
+                     chartRangeMin=min(IMD_Quintile), chartRangeMax=max(IMD_Quintile)
+    )
+  ) %>%
+  select(Ethnicity, IMD_Quintile, `Std Rate (per 1e+05)`, Slope ) %>%
+ # rename_at("Ethnic_Grouping_Census", ~"Ethnicity") %>%
+  pivot_wider(values_from = `Std Rate (per 1e+05)` , names_from = IMD_Quintile) %>%
+  formattable(list(area(col = 3:7) ~ color_tile("#f6fef6", "#1B9E77" ))) %>%
+  formattable::as.htmlwidget() %>%
+  spk_add_deps()
+
+
+```
+
+**Mean Deviation**
+
+The mean deviation from mean is an absolute measure of inequality that shows the difference in mean between each subgroup and a reference group. It is used for non-ordered groups such as ethnic groups. We take the "white" as the reference population.
+
+```{r fig.height=3, fig.width=10}
+
+### Inequality metrics
+
+#
+# [*Needs more looking into it !! We should probably remove Unknown when comparing or use White as the reference*]{style="color:green"}
+
+mean_deviation_Eth_IMD <- PopLTC_IMD_Eth2 %>%
+   mutate(reference=ifelse(Ethnicity == 'White', `Std Rate (per 1e+05)`, NA)) %>%
+   group_by(IMD_Quintile) %>%
+   fill(reference, .direction = "downup") %>%
+   mutate(
+     difference_to_reference = `Std Rate (per 1e+05)` - reference
+   )
+
+
+ plot_mean_diff_Eth_IMD <- mean_deviation_Eth_IMD %>%
+   mutate(lowercl =
+            ifelse(Ethnicity == "White", (`95% LCL (Std)` - `Std Rate (per 1e+05)`),(`95% LCL (Std)` - `Std Rate (per 1e+05)`) + difference_to_reference),
+          uppercl 
+          =
+            ifelse(Ethnicity == "White", (`95% UCL (Std)` - `Std Rate (per 1e+05)`) ,(`95% UCL (Std)` - `Std Rate (per 1e+05)`) + difference_to_reference),
+   )   %>%
+   ggplot(aes(x = difference_to_reference, y = Ethnicity)) +
+   geom_point(color="black") +
+   geom_errorbar(aes(xmin = lowercl, xmax = uppercl),color="#1B9E77") +
+   geom_vline(xintercept = 0) +
+   facet_wrap(~IMD_Quintile, ncol = 5 ) +
+   labs(x = paste0( "Standardised ",LTCPar," prevlance in BSOL population")) +
+   #  xlim(-6000, 6000) +
+   theme_minimal() +
+   theme(axis.text.x = element_text(size=6),
+         axis.text=element_text(size=8),
+         axis.title.x =element_text(size=8),
+         axis.title.y=element_blank(),
+         axis.text.y=element_text(size=6),
+        plot.title = element_text(size=10),
+         strip.text = element_blank(),
+        legend.title = element_blank(),
+         legend.text=  element_text(size=6),
+         legend.key.size =unit(0.2,'cm' ),
+         legend.position = "top")+
+
+ theme(
+   legend.position = "bottom",
+   legend.title = element_blank(),
+   axis.title.y = element_blank()
+ )
+
+
+
+
+```
+
+```{r fig.height=3, fig.width=10}
+#| label: fig-MeanDeviationPrev
+#| fig-cap: !expr glue::glue(" Mean Deviation of {params$LTC} prevalence in BSOL by ethnicity and IMD")
+
+ plot_mean_diff_Eth_IMD 
+
+###(**Slope Index of Inequality**)
+
+###[*for IMD, needs looking into it*]{style="color:green"}
+
+```
+
+
+
+**Crude and age standardised mortality rates in the `{r} params$LTC` population by IMD and ethnicity**
+
+For the detailed table of crude and standardised mortality rates in the  `{r} params$LTC` population by IMD and ethnicity see @sec-Appendix4.
+From the previous sections, looking at rates by IMD or ethnicity separately, we can identify that the unknown category looks like it is an anomaly and needs investigating. However to better see the difference between the known ethnic categories, we exclude the unknown category in the following section.
+
+
+```{r}
+##dsr using the pheIndicator
+
+PopLTC_IMD_Eth_PHEind_dsr_m<-IMDEthAge %>%
+  filter(!Ethnicity=="Unknown") %>% 
+          left_join(CensusPop_Age,by="AgeBand_3")%>% 
+               group_by(Ethnicity, IMD_Quintile) %>%
+                     phe_dsr( x = NumDeathwithLTC,
+                     n = LTCPop,
+                     stdpop  = Population,
+                     stdpoptype = "field",
+                     type = "full",         
+                     multiplier = 100000) %>% select("Ethnicity","IMD_Quintile","value","lowercl","uppercl") %>% 
+                mutate(Subgroup=paste(Ethnicity,IMD_Quintile))
+
+##calculating the crude rate and the CI
+PopLTC_IMD_Eth_PHEind_Crude_m<-IMDEthAge %>% 
+    filter(!Ethnicity=="Unknown") %>% 
+                  group_by(Ethnicity, IMD_Quintile) %>%
+                      phe_proportion(.,NumDeathwithLTC,LTCPop,multiplier = 100000) %>% select("Ethnicity","IMD_Quintile","NumDeathwithLTC","LTCPop","value","lowercl","uppercl")
+
+
+PopLTC_IMD_Eth_m<-PopLTC_IMD_Eth_PHEind_Crude_m %>% 
+            left_join(PopLTC_IMD_Eth_PHEind_dsr_m,by=c("Ethnicity","IMD_Quintile"))
+
+
+```
+
+
+```{r}
+##| label: tbl-IMDEthAgeStd
+##| tbl-cap: !expr glue::glue("Prevalence and age-standardised prevalence of {params$LTC} in BSOL population by IMD")
+
+
+
+ #"#1B9E77" "#D95F02" "#7570B3" "#E7298A" "#66A61E" "#E6AB02" "#A6761D" "#666666"
+PopLTC_IMD_Eth2_m<-PopLTC_IMD_Eth_m %>% rename(`Numerator`=NumDeathwithLTC,
+                          Denominator=LTCPop,
+                          `Crude Rate (per 1e+05)`=`value.x`,
+                          `95% LCL (Crude)`=`lowercl.x`,
+                          `95% UCL (Crude)`=`uppercl.x`,
+                          `Std Rate (per 1e+05)`=`value.y`,
+                          `95% LCL (Std)`=`lowercl.y`,
+                          `95% UCL (Std)`=`uppercl.y`) %>% 
+formattable(.,
+            list(`Ethnicity`=formattable::formatter("span",style=~style(color="black",font.weight="bold")),
+                 `Crude Rate (per 1e+05)`=formattable::color_tile("#FDEBD0", "#D95F02" ),#"#FDE725FF","#27AD81FF")
+                 `Std Rate (per 1e+05)`=formattable::color_tile("#FDEBD0", "#D95F02" )
+            ))
+# %>% 
+#   knitr::kable( caption = "Crude and age standardised mortality rates by IMD") %>% 
+#   kable_styling()
+
+
+```
+
+```{r fig.height=4, fig.width=8}
+
+
+
+sp_I_E_m<-PopLTC_IMD_Eth2_m %>% 
+  select(Ethnicity,IMD_Quintile,`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`) %>% #,`95% LCL (Crude)`,`95% UCL (Crude)`,`95% LCL (Std)`,`95% UCL (Std)` ) %>% 
+  as_tibble() %>% 
+  pivot_longer(
+    cols=c(`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`),
+    names_to="Rate"
+  )
+s_LCLp_I_E_m<-PopLTC_IMD_Eth2_m %>% 
+  select(Ethnicity,IMD_Quintile,`95% LCL (Crude)`,`95% LCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(cols=c(`95% LCL (Crude)`,`95% LCL (Std)`),
+    names_to="LCL")
+  
+s_UCLp_I_E_m<-PopLTC_IMD_Eth2_m %>% 
+  select(Ethnicity,IMD_Quintile,`95% UCL (Crude)`,`95% UCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(cols=c(`95% UCL (Crude)`,`95% UCL (Std)`),
+    names_to="UCL")
+
+
+#LTCPar
+
+
+ppp<-ggplot(sp_I_E_m,aes(x=IMD_Quintile,y=value, fill=Rate))+
+  geom_bar(stat="identity",position="dodge",width=0.5)+
+scale_fill_manual(values =c("#D95F02","#B2BABB"))+
+  geom_errorbar(aes(x=IMD_Quintile,ymin=s_LCLp_I_E_m$value,ymax=s_UCLp_I_E_m$value),position=position_dodge(0.5), width=0.2,size=0.5)+
+  labs( x="IMD_Quintile",y="rate per 100,000", title=paste0("Mortality rate in ",LTCPar," population")) +
+  facet_wrap(~Ethnicity,nrow=2,scale="free_y" )+#theme(panel.spacing=unit(3,"lines"))+
+   theme_minimal() +
+   theme(axis.text.x = element_text(),
+        axis.text=element_text(size=6),
+        axis.title.x =element_text(size=6),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=8),
+        strip.text = element_text(size=6),
+        legend.title = element_blank(),
+        legend.text=  element_text(size=6),
+        legend.key.size =unit(0.2,'cm'),
+        legend.position = "top",
+        panel.spacing=unit(3,"lines"))
+  
+ppp
+
+
+
+```
+
+```{r tbl.height=2,tbl.width=10}
+#| label: tbl-IMDEthMort
+#| tbl-cap: !expr glue::glue("Mortality rate in BSOL {params$LTC} population by IMD and ethnicity")
+PopLTC_IMD_Eth2_m %>%
+  group_by(Ethnicity) %>%
+  mutate(
+    `Crude Rate (per 1e+05)` =  round(`Crude Rate (per 1e+05)`,1),
+     Slope = spk_chr( `Crude Rate (per 1e+05)`, type="line",
+                     chartRangeMin=min(IMD_Quintile), chartRangeMax=max(IMD_Quintile)
+    )
+  ) %>%
+  select(Ethnicity, IMD_Quintile, `Crude Rate (per 1e+05)`, Slope ) %>%
+ # rename_at("Ethnic_Grouping_Census", ~"Ethnicity") %>%
+  pivot_wider(values_from = `Crude Rate (per 1e+05)` , names_from = IMD_Quintile) %>%
+  formattable(list(area(col = 3:7) ~ color_tile("#FDEBD0", "#D95F02"))) %>%
+  formattable::as.htmlwidget() %>%
+  spk_add_deps()
+
+
+```
+
+```{r tbl.height=2,tbl.width=10}
+#| label: tbl-IMDEthStdMort
+#| tbl-cap: !expr glue::glue("Age standardised mortality rate in BSOL {params$LTC} population by IMD and ethnicity")
+PopLTC_IMD_Eth2_m %>%
+  group_by(Ethnicity) %>%
+  mutate(
+    `Std Rate (per 1e+05)` =  round(`Std Rate (per 1e+05)`,1),
+     Slope = spk_chr( `Std Rate (per 1e+05)`, type="line",
+                     chartRangeMin=min(IMD_Quintile), chartRangeMax=max(IMD_Quintile)
+    )
+  ) %>%
+  select(Ethnicity, IMD_Quintile, `Std Rate (per 1e+05)`, Slope ) %>%
+ # rename_at("Ethnic_Grouping_Census", ~"Ethnicity") %>%
+  pivot_wider(values_from = `Std Rate (per 1e+05)` , names_from = IMD_Quintile) %>%
+  formattable(list(area(col = 3:7) ~ color_tile("#FDEBD0", "#D95F02"))) %>%
+  formattable::as.htmlwidget() %>%
+  spk_add_deps()
+
+
+
+#kable(list(head(f1),head(f2)))
+
+
+```
+
+**Mean Deviation**
+
+
+```{r fig.height=3, fig.width=10}
+
+### Inequality metrics
+
+#
+# [*Needs more looking into it !! We should probably remove Unknown when comparing or use White as the reference*]{style="color:green"}
+
+mean_deviation_Eth_IMD_m <- PopLTC_IMD_Eth2_m %>%
+   mutate(reference=ifelse(Ethnicity == 'White', `Std Rate (per 1e+05)`, NA)) %>%
+   group_by(IMD_Quintile) %>%
+   fill(reference, .direction = "downup") %>%
+   mutate(
+     difference_to_reference = `Std Rate (per 1e+05)` - reference
+   )
+
+
+ plot_mean_diff_Eth_IMD_m <- mean_deviation_Eth_IMD_m %>%
+   mutate(lowercl =
+            ifelse(Ethnicity == "White", (`95% LCL (Std)` - `Std Rate (per 1e+05)`),(`95% LCL (Std)` - `Std Rate (per 1e+05)`) + difference_to_reference),
+          uppercl 
+          =
+            ifelse(Ethnicity == "White", (`95% UCL (Std)` - `Std Rate (per 1e+05)`) ,(`95% UCL (Std)` - `Std Rate (per 1e+05)`) + difference_to_reference),
+   )   %>%
+   ggplot(aes(x = difference_to_reference, y = Ethnicity)) +
+   geom_point(color="black") +
+   geom_errorbar(aes(xmin = lowercl, xmax = uppercl),color="#D95F02") +
+   geom_vline(xintercept = 0) +
+   facet_wrap(~IMD_Quintile, ncol = 5 ) +
+   labs(x = paste0( "Standardised mortality rate in BSOL ",LTCPar," population")) +
+   #  xlim(-6000, 6000) +
+   theme_minimal() +
+   theme(axis.text.x = element_text(size=6),
+         axis.text=element_text(size=8),
+         axis.title.x =element_text(size=8),
+         axis.title.y=element_blank(),
+         axis.text.y=element_text(size=6),
+        plot.title = element_text(size=10),
+         strip.text = element_blank(),
+        legend.title = element_blank(),
+         legend.text=  element_text(size=6),
+         legend.key.size =unit(0.2,'cm' ),
+         legend.position = "top")+
+
+ theme(
+   legend.position = "bottom",
+   legend.title = element_blank(),
+   axis.title.y = element_blank()
+ )
+
+
+
+
+```
+
+```{r fig.height=3, fig.width=10}
+#| label: fig-MeanDeviationMort
+#| fig-cap: !expr glue::glue(" Mean Deviation of mortality rate in BSOL {params$LTC} population by ethnicity and IMD")
+
+ plot_mean_diff_Eth_IMD_m 
+
+###(**Slope Index of Inequality**)
+
+###[*for IMD, needs looking into it*]{style="color:green"}
+
+```
+
+
+
+
+
+**Crude and age standardised mortality rates caused by `{r} params$LTC` (with `{r} params$LTC` population as the denominator) by IMD and ethnicity**
+
+For the detailed table of crude and standardised mortality rates in the  `{r} params$LTC` population by IMD and ethnicity see @sec-Appendix4.
+
+
+
+```{r}
+##dsr using the pheIndicator
+
+PopLTC_IMD_Eth_PHEind_dsr_mc<-IMDEthAge %>%
+  filter(!Ethnicity=="Unknown") %>% 
+          left_join(CensusPop_Age,by="AgeBand_3")%>% 
+               group_by(Ethnicity, IMD_Quintile) %>%
+                     phe_dsr( x = NumDeathLTC,
+                     n = LTCPop,
+                     stdpop  = Population,
+                     stdpoptype = "field",
+                     type = "full",         
+                     multiplier = 100000) %>% select("Ethnicity","IMD_Quintile","value","lowercl","uppercl") %>% 
+                mutate(Subgroup=paste(Ethnicity,IMD_Quintile))
+
+##calculating the crude rate and the CI
+PopLTC_IMD_Eth_PHEind_Crude_mc<-IMDEthAge %>% 
+    filter(!Ethnicity=="Unknown") %>% 
+                  group_by(Ethnicity, IMD_Quintile) %>%
+                      phe_proportion(.,NumDeathLTC,LTCPop,multiplier = 100000) %>% select("Ethnicity","IMD_Quintile","NumDeathLTC","LTCPop","value","lowercl","uppercl")
+
+
+PopLTC_IMD_Eth_mc<-PopLTC_IMD_Eth_PHEind_Crude_mc %>% 
+            left_join(PopLTC_IMD_Eth_PHEind_dsr_mc,by=c("Ethnicity","IMD_Quintile"))
+
+
+```
+
+
+```{r}
+##| label: tbl-IMDEthAgeStd
+##| tbl-cap: !expr glue::glue("Prevalence and age-standardised prevalence of {params$LTC} in BSOL population by IMD")
+
+
+
+ #"#1B9E77" "#D95F02" "#7570B3" "#E7298A" "#66A61E" "#E6AB02" "#A6761D" "#666666"
+PopLTC_IMD_Eth2_mc<-PopLTC_IMD_Eth_mc %>% rename(`Numerator`=NumDeathLTC,
+                          Denominator=LTCPop,
+                          `Crude Rate (per 1e+05)`=`value.x`,
+                          `95% LCL (Crude)`=`lowercl.x`,
+                          `95% UCL (Crude)`=`uppercl.x`,
+                          `Std Rate (per 1e+05)`=`value.y`,
+                          `95% LCL (Std)`=`lowercl.y`,
+                          `95% UCL (Std)`=`uppercl.y`) %>% 
+formattable(.,
+            list(`Ethnicity`=formattable::formatter("span",style=~style(color="black",font.weight="bold")),
+                 `Crude Rate (per 1e+05)`=formattable::color_tile("#F4ECF7", "#7570B3" ),#"#FDE725FF","#27AD81FF")
+                 `Std Rate (per 1e+05)`=formattable::color_tile("#F4ECF7", "#7570B3" )
+            ))
+# %>% 
+#   knitr::kable( caption = "Crude and age standardised mortality rates by IMD") %>% 
+#   kable_styling()
+
+
+```
+
+```{r fig.height=4, fig.width=8}
+
+
+
+sp_I_E_mc<-PopLTC_IMD_Eth2_mc %>% 
+  select(Ethnicity,IMD_Quintile,`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`) %>% #,`95% LCL (Crude)`,`95% UCL (Crude)`,`95% LCL (Std)`,`95% UCL (Std)` ) %>% 
+  as_tibble() %>% 
+  pivot_longer(
+    cols=c(`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`),
+    names_to="Rate"
+  )
+s_LCLp_I_E_mc<-PopLTC_IMD_Eth2_mc %>% 
+  select(Ethnicity,IMD_Quintile,`95% LCL (Crude)`,`95% LCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(cols=c(`95% LCL (Crude)`,`95% LCL (Std)`),
+    names_to="LCL")
+  
+s_UCLp_I_E_mc<-PopLTC_IMD_Eth2_mc %>% 
+  select(Ethnicity,IMD_Quintile,`95% UCL (Crude)`,`95% UCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(cols=c(`95% UCL (Crude)`,`95% UCL (Std)`),
+    names_to="UCL")
+
+
+#LTCPar
+
+ppp<-ggplot(sp_I_E_mc,aes(x=IMD_Quintile,y=value, fill=Rate))+
+  geom_bar(stat="identity",position="dodge",width=0.5)+
+scale_fill_manual(values =c("#7570B3","#B2BABB"))+
+  geom_errorbar(aes(x=IMD_Quintile,ymin=s_LCLp_I_E_mc$value,ymax=s_UCLp_I_E_mc$value),position=position_dodge(0.5), width=0.2,size=0.5)+
+  labs( x="IMD_Quintile",y="rate per 100,000", title=paste0("Mortality rate caused by ",LTCPar)) +
+  facet_wrap(~Ethnicity,scale="free_y",nrow=2 )+#theme(panel.spacing=unit(3,"lines"))+
+   theme_minimal() +
+   theme(axis.text.x = element_text(),
+        axis.text=element_text(size=6),
+        axis.title.x =element_text(size=6),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=8),
+        strip.text = element_text(size=6),
+        legend.title = element_blank(),
+        legend.text=  element_text(size=6),
+        legend.key.size =unit(0.2,'cm'),
+        legend.position = "top",
+        panel.spacing=unit(3,"lines"))
+  
+ppp
+
+
+
+```
+
+```{r tbl.height=2,tbl.width=10}
+#| label: tbl-IMDEthMortc
+#| tbl-cap: !expr glue::glue("Mortality rate in BSOL caused by {params$LTC}")
+PopLTC_IMD_Eth2_mc %>%
+  group_by(Ethnicity) %>%
+  mutate(
+    `Crude Rate (per 1e+05)` =  round(`Crude Rate (per 1e+05)`,1),
+     Slope = spk_chr( `Crude Rate (per 1e+05)`, type="line",
+                     chartRangeMin=min(IMD_Quintile), chartRangeMax=max(IMD_Quintile)
+    )
+  ) %>%
+  select(Ethnicity, IMD_Quintile, `Crude Rate (per 1e+05)`, Slope ) %>%
+ # rename_at("Ethnic_Grouping_Census", ~"Ethnicity") %>%
+  pivot_wider(values_from = `Crude Rate (per 1e+05)` , names_from = IMD_Quintile) %>%
+  formattable(list(area(col = 3:7) ~ color_tile("#F4ECF7", "#7570B3"))) %>%
+  formattable::as.htmlwidget() %>%
+  spk_add_deps()
+
+
+```
+
+```{r tbl.height=2,tbl.width=10}
+#| label: tbl-IMDEthStdMortc
+#| tbl-cap: !expr glue::glue("Age standardised mortality rate in BSOL caused by {params$LTC}")
+PopLTC_IMD_Eth2_mc %>%
+  group_by(Ethnicity) %>%
+  mutate(
+    `Std Rate (per 1e+05)` =  round(`Std Rate (per 1e+05)`,1),
+     Slope = spk_chr( `Std Rate (per 1e+05)`, type="line",
+                     chartRangeMin=min(IMD_Quintile), chartRangeMax=max(IMD_Quintile)
+    )
+  ) %>%
+  select(Ethnicity, IMD_Quintile, `Std Rate (per 1e+05)`, Slope ) %>%
+ # rename_at("Ethnic_Grouping_Census", ~"Ethnicity") %>%
+  pivot_wider(values_from = `Std Rate (per 1e+05)` , names_from = IMD_Quintile) %>%
+  formattable(list(area(col = 3:7) ~ color_tile("#F4ECF7", "#7570B3"))) %>%
+  formattable::as.htmlwidget() %>%
+  spk_add_deps()
+
+
+
+#kable(list(head(f1),head(f2)))
+
+
+```
+
+**Mean Deviation**
+
+
+```{r fig.height=3, fig.width=10}
+
+### Inequality metrics
+
+#
+# [*Needs more looking into it !! We should probably remove Unknown when comparing or use White as the reference*]{style="color:green"}
+
+mean_deviation_Eth_IMD_mc <- PopLTC_IMD_Eth2_mc %>%
+   mutate(reference=ifelse(Ethnicity == 'White', `Std Rate (per 1e+05)`, NA)) %>%
+   group_by(IMD_Quintile) %>%
+   fill(reference, .direction = "downup") %>%
+   mutate(
+     difference_to_reference = `Std Rate (per 1e+05)` - reference
+   )
+
+
+ plot_mean_diff_Eth_IMD_mc <- mean_deviation_Eth_IMD_mc %>%
+   mutate(lowercl =
+            ifelse(Ethnicity == "White", (`95% LCL (Std)` - `Std Rate (per 1e+05)`),(`95% LCL (Std)` - `Std Rate (per 1e+05)`) + difference_to_reference),
+          uppercl 
+          =
+            ifelse(Ethnicity == "White", (`95% UCL (Std)` - `Std Rate (per 1e+05)`) ,(`95% UCL (Std)` - `Std Rate (per 1e+05)`) + difference_to_reference),
+   )   %>%
+   ggplot(aes(x = difference_to_reference, y = Ethnicity)) +
+   geom_point(color="black") +
+   geom_errorbar(aes(xmin = lowercl, xmax = uppercl),color="#7570B3") +
+   geom_vline(xintercept = 0) +
+   facet_wrap(~IMD_Quintile, ncol = 5 ) +
+   labs(x = paste0( "Standardised mortality rate in BSOL caused by ",LTCPar)) +
+   #  xlim(-6000, 6000) +
+   theme_minimal() +
+   theme(axis.text.x = element_text(size=6),
+         axis.text=element_text(size=8),
+         axis.title.x =element_text(size=8),
+         axis.title.y=element_blank(),
+         axis.text.y=element_text(size=6),
+        plot.title = element_text(size=10),
+         strip.text = element_blank(),
+        legend.title = element_blank(),
+         legend.text=  element_text(size=6),
+         legend.key.size =unit(0.2,'cm' ),
+         legend.position = "top")+
+
+ theme(
+   legend.position = "bottom",
+   legend.title = element_blank(),
+   axis.title.y = element_blank()
+ )
+
+
+
+
+```
+
+```{r fig.height=3, fig.width=10}
+#| label: fig-MeanDeviationMortc
+#| fig-cap: !expr glue::glue(" Mean Deviation of mortality rate in BSOL {params$LTC} population by ethnicity and IMD")
+
+ plot_mean_diff_Eth_IMD_mc 
+
+###(**Slope Index of Inequality**)
+
+###[*for IMD, needs looking into it*]{style="color:green"}
+
+```
+
+
+**Crude and age standardised mortality rates caused by `{r} params$LTC` (with  the whole population as the denominator) by IMD and ethnicity**
+
+See the number of death caused by CVD as a proportion of the whole population rather than the CVD population.
+
+
+```{r}
+
+l<-IMDEthAge %>%
+  filter(!Ethnicity=="Unknown") %>% 
+          left_join(CensusPop_Age,by="AgeBand_3")%>% 
+               group_by(Ethnicity, IMD_Quintile) %>%
+                     phe_dsr( x = NumDeathLTC,
+                     n = Total.x,
+                     stdpop  = Population,
+                     stdpoptype = "field",
+                     type = "full",         
+                     multiplier = 100000) %>% select("Ethnicity","IMD_Quintile","value","lowercl","uppercl") %>% 
+                mutate(Subgroup=paste(Ethnicity,IMD_Quintile))
+
+##calculating the crude rate and the CI
+ll<-IMDEthAge %>% 
+    filter(!Ethnicity=="Unknown") %>% 
+                  group_by(Ethnicity, IMD_Quintile) %>%
+                      phe_proportion(.,NumDeathLTC,Total,multiplier = 100000) %>% select("Ethnicity","IMD_Quintile","NumDeathLTC","Total","value","lowercl","uppercl")
+
+
+lll<-ll%>% 
+            left_join(l,by=c("Ethnicity","IMD_Quintile"))
+
+
+```
+
+
+
+```{r}
+##| label: tbl-IMDEthAgeStd
+##| tbl-cap: !expr glue::glue("Prevalence and age-standardised prevalence of {params$LTC} in BSOL population by IMD")
+
+
+
+ #"#1B9E77" "#D95F02" "#7570B3" "#E7298A" "#66A61E" "#E6AB02" "#A6761D" "#666666"
+llll<-lll %>% rename(`Numerator`=NumDeathLTC,
+                          Denominator=Total,
+                          `Crude Rate (per 1e+05)`=`value.x`,
+                          `95% LCL (Crude)`=`lowercl.x`,
+                          `95% UCL (Crude)`=`uppercl.x`,
+                          `Std Rate (per 1e+05)`=`value.y`,
+                          `95% LCL (Std)`=`lowercl.y`,
+                          `95% UCL (Std)`=`uppercl.y`) %>% 
+formattable(.,
+            list(`Ethnicity`=formattable::formatter("span",style=~style(color="black",font.weight="bold")),
+                 `Crude Rate (per 1e+05)`=formattable::color_tile("#F4ECF7", "#6C261F" ),#"#FDE725FF","#27AD81FF")
+                 `Std Rate (per 1e+05)`=formattable::color_tile("#F4ECF7", "#6C261F" )
+            ))
+# %>% 
+#   knitr::kable( caption = "Crude and age standardised mortality rates by IMD") %>% 
+#   kable_styling()
+
+
+```
+
+```{r fig.height=4, fig.width=8}
+
+
+
+sp_I_E_l<-llll %>% 
+  select(Ethnicity,IMD_Quintile,`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`) %>% #,`95% LCL (Crude)`,`95% UCL (Crude)`,`95% LCL (Std)`,`95% UCL (Std)` ) %>% 
+  as_tibble() %>% 
+  pivot_longer(
+    cols=c(`Crude Rate (per 1e+05)`,`Std Rate (per 1e+05)`),
+    names_to="Rate"
+  )
+s_LCLp_I_E_l<-llll %>% 
+  select(Ethnicity,IMD_Quintile,`95% LCL (Crude)`,`95% LCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(cols=c(`95% LCL (Crude)`,`95% LCL (Std)`),
+    names_to="LCL")
+  
+s_UCLp_I_E_l<-llll %>% 
+  select(Ethnicity,IMD_Quintile,`95% UCL (Crude)`,`95% UCL (Std)`) %>% 
+  as_tibble() %>% 
+  pivot_longer(cols=c(`95% UCL (Crude)`,`95% UCL (Std)`),
+    names_to="UCL")
+
+
+#LTCPar
+
+#install.packages("ggh4x")
+#library(ggh4x)
+ppp<-ggplot(sp_I_E_l,aes(x=IMD_Quintile,y=value, fill=Rate))+
+  geom_bar(stat="identity",position="dodge",width=0.5)+
+scale_fill_manual(values =c("#6C261F","#B2BABB"))+
+  geom_errorbar(aes(x=IMD_Quintile,ymin=s_LCLp_I_E_l$value,ymax=s_UCLp_I_E_l$value),position=position_dodge(0.5), width=0.2,size=0.5)+
+  labs( x="IMD_Quintile",y="rate per 100,000")+#, title=paste0("Mortality rate (as percentage of all population caused by ",LTCPar)) +
+  #facet_wrap2(~Ethnicity, nrow = 2,ncol=3, independent = "y")+
+ facet_wrap(~Ethnicity,nrow=2 ,scale="free_y")+#theme(panel.spacing=unit(3,"lines"))+
+   theme_minimal() +
+   theme(axis.text.x = element_text(),
+        axis.text=element_text(size=6),
+        axis.title.x =element_text(size=6),
+        axis.title.y=element_blank(),
+        plot.title = element_text(size=8),
+        strip.text = element_text(size=6),
+        legend.title = element_blank(),
+        legend.text=  element_text(size=6),
+        legend.key.size =unit(0.2,'cm'),
+        legend.position = "top",
+        panel.spacing=unit(3,"lines"))
+  
+ppp
+
+
+
+```
+
+```{r tbl.height=2,tbl.width=10}
+##| label: tbl-IMDEthMortc
+##| tbl-cap: !expr glue::glue("Mortality rate in BSOL caused by {params$LTC}")
+llll %>%
+  group_by(Ethnicity) %>%
+  mutate(
+    `Crude Rate (per 1e+05)` =  round(`Crude Rate (per 1e+05)`,1),
+     Slope = spk_chr( `Crude Rate (per 1e+05)`, type="line",
+                     chartRangeMin=min(IMD_Quintile), chartRangeMax=max(IMD_Quintile)
+    )
+  ) %>%
+  select(Ethnicity, IMD_Quintile, `Crude Rate (per 1e+05)`, Slope ) %>%
+ # rename_at("Ethnic_Grouping_Census", ~"Ethnicity") %>%
+  pivot_wider(values_from = `Crude Rate (per 1e+05)` , names_from = IMD_Quintile) %>%
+  formattable(list(area(col = 3:7) ~ color_tile("#F4ECF7", "#6C261F"))) %>%
+  formattable::as.htmlwidget() %>%
+  spk_add_deps()
+
+
+```
+
+
+```{r tbl.height=2,tbl.width=10}
+##| label: tbl-IMDEthStdMortc
+##| tbl-cap: !expr glue::glue("Age standardised mortality rate in BSOL caused by {params$LTC}")
+llll %>%
+  group_by(Ethnicity) %>%
+  mutate(
+    `Std Rate (per 1e+05)` =  round(`Std Rate (per 1e+05)`,1),
+     Slope = spk_chr( `Std Rate (per 1e+05)`, type="line",
+                     chartRangeMin=min(IMD_Quintile), chartRangeMax=max(IMD_Quintile)
+    )
+  ) %>%
+  select(Ethnicity, IMD_Quintile, `Std Rate (per 1e+05)`, Slope ) %>%
+ # rename_at("Ethnic_Grouping_Census", ~"Ethnicity") %>%
+  pivot_wider(values_from = `Std Rate (per 1e+05)` , names_from = IMD_Quintile) %>%
+  formattable(list(area(col = 3:7) ~ color_tile("#F4ECF7", "#6C261F"))) %>%
+  formattable::as.htmlwidget() %>%
+  spk_add_deps()
+
+
+
+#kable(list(head(f1),head(f2)))
+
+
+```
+
+**Mean Deviation**
+
+
+```{r fig.height=3, fig.width=10}
+
+### Inequality metrics
+
+#
+# [*Needs more looking into it !! We should probably remove Unknown when comparing or use White as the reference*]{style="color:green"}
+
+mean_llll <- llll %>%
+   mutate(reference=ifelse(Ethnicity == 'White', `Std Rate (per 1e+05)`, NA)) %>%
+   group_by(IMD_Quintile) %>%
+   fill(reference, .direction = "downup") %>%
+   mutate(
+     difference_to_reference = `Std Rate (per 1e+05)` - reference
+   )
+
+
+ plot_llll <- mean_llll %>%
+   mutate(lowercl =
+            ifelse(Ethnicity == "White", (`95% LCL (Std)` - `Std Rate (per 1e+05)`),(`95% LCL (Std)` - `Std Rate (per 1e+05)`) + difference_to_reference),
+          uppercl 
+          =
+            ifelse(Ethnicity == "White", (`95% UCL (Std)` - `Std Rate (per 1e+05)`) ,(`95% UCL (Std)` - `Std Rate (per 1e+05)`) + difference_to_reference),
+   )   %>%
+   ggplot(aes(x = difference_to_reference, y = Ethnicity)) +
+   geom_point(color="black") +
+   geom_errorbar(aes(xmin = lowercl, xmax = uppercl),color="#6C261F") +
+   geom_vline(xintercept = 0) +
+   facet_wrap(~IMD_Quintile, ncol = 5 ) +
+   labs(x = paste0( "Standardised mortality rate in BSOL caused by ",LTCPar)) +
+   #  xlim(-6000, 6000) +
+   theme_minimal() +
+   theme(axis.text.x = element_text(size=6),
+         axis.text=element_text(size=8),
+         axis.title.x =element_text(size=8),
+         axis.title.y=element_blank(),
+         axis.text.y=element_text(size=6),
+        plot.title = element_text(size=10),
+         strip.text = element_blank(),
+        legend.title = element_blank(),
+         legend.text=  element_text(size=6),
+         legend.key.size =unit(0.2,'cm' ),
+         legend.position = "top")+
+
+ theme(
+   legend.position = "bottom",
+   legend.title = element_blank(),
+   axis.title.y = element_blank()
+ )
+
+
+
+
+```
+
+```{r fig.height=3, fig.width=10}
+##| label: fig-MeanDeviationMortc
+##| fig-cap: !expr glue::glue(" Mean Deviation of mortality rate in BSOL {params$LTC} population by ethnicity and IMD")
+
+ plot_llll
+
+###(**Slope Index of Inequality**)
+
+###[*for IMD, needs looking into it*]{style="color:green"}
+
+```
+
+
+
+## Limitations: {#sec-Limitations}
+
+Death rates that are calculated using the Census data 2021 would be different from the rates using the ESP 2013. Death rates that are age standardised using ESkP 2013 would give less weight to the older age-groups (which usually have higher death rates) (9% vs 17%, respectively-see figure of Age profile both populations). On the other hand, it looks like the Census population would give a higher weight to the under 15s.
+
+## Notes, definitions and methodologies: {#sec-Methods}
+
+IMD:
+
+-   National deciles of area deprivation are created through ranking small geographic populations known as Lower-layer Super Output Areas (LSOAs) according to their deprivation score and grouping them into 10 divisions.
+-   Extracted Census 2021 data for England by LSOA, Age and Sex.
+-   As IMD is based on 2011 LSOA codes and not 2021 LSOA codes, did a best fit lookup on 2021 LSOA codes to get the 2011 code.
+-   Assigned the IMD to the LSOA based on the 2011 code.
+-   Then grouped the data by IMD Decile \[4\].
+
+Avoidable Death:
+
+-   A list of ICD-10 codes of death from causes that are considered avoidable, treatable or preventable by Clinical Commissioning Groups (CCGs) in England and Wales, 2020, was compiled and coded \[5\].
+-   This list was used to extract patient level avoidable death from the BSOL death register.
+-   An avoidable death flag was added to the linked patient record.
+
+LTC patient identification:
+
+-   LD (Learning Disability): patients admitted for learning disability ICD10 code list in any diagnosis position (list available upon request).
+
+-   Diabetes: Patients with any prescription from chapter 6 in the BNF.
+
+-   CVD (Cardiovascular Disease): Patients with any prescription from chapter 2 BNF, or patients admitted for all ICD10 codes with I\[2-6\]\*\* in any diagnosis position, or patients admitted for ICD10 codes with I1\*\* (hypertension) in the first diagnosis position.
+
+-   Respiratory: Patients with any prescription from chapter 3, or admitted from all ICD10 codes with J\*\*\*.
+
+-   MSK (musculoskeletal):: Patients with any prescription from chapter 10 or admitted for ICD10 codes with M\*\*.
+
+-   MH(Mental Health):: Patient with any prescription from chapter 4.2 or 4.3 in BNF, or had any referral or attendance in the MHSDS (Mental Health Services Data Set) in the designated period or had an IAPT (Improving Access to Psychological Therapies) contact or referral in the designated period.
+
+-   Cancer: Patients admitted for ICD10 codes with C\*\*.
+
+## References:
+
+\[1\] https://research.mysociety.org/sites/imd2019/about/#data
+
+\[2\] Estimates of the ONS population used to calculate monthly rates and age standardised monthly rates based on Mid-year population estimates: - Method in https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/deaths/methodologies/coronavirusandmortalityinenglandandwalesmethodology
+
+\[3\] https://www.ons.gov.uk/datasets/create
+
+\[4\] \[EAT_Reporting_BSOL\].\[Development\].\[BSOL_1300_Census_National_Age_Data_IMD\]
+
+\[5\] https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/causesofdeath/datasets/avoidablemortalitybyclinicalcommissioninggroupsinenglandandhealthboardsinwales
+
+\[6\] https://data.england.nhs.uk/ncdr/data_element/indices-of-multiple-deprivation-imd-decile/
+
+\[7\] https://www.ons.gov.uk/peoplepopulationandcommunity/culturalidentity/ethnicity/bulletins/ethnicgroupenglandandwales/census2021#ethnic-groups-in-england-and-wales
+
+[*More Work to do:*]{style="color:green"}
+
+-   Formatting and some cross referencing different part of document, table and figure titles etc
+-   Add sex to age/sex standardise.
+-   Use England population for benchmarking and comparing with BSOL population (use European standard population as ref pop)--need death in the UK by IMD and death in the UK by Ethnicity
+-   Try calculating the age stand rate using the ESP as the distribution looks more appropriate
+-   Look at time line of events and standardise (comparing the different years/ month)--denominator of our population needs to be decided.
+-   more work on inequality metrics
+-   look into indirect standardisation
+
+\newpage
+
+## Appendix 1: BSOL population {#sec-Appendix1}
+
+```{r}
+
+#| label: BSOLPop
+#| tbl-cap : ""
+#| echo: false
+
+
+##tables of events and population
+
+# 
+# InequalityDeath<- function (data,Inequalitymarker){
+#   Inequalitymarker<-enquo(Inequalitymarker)  #quote
+#   d<-data %>%
+#             group_by(!!Inequalitymarker,AgeBand_3,Gender_Desc) %>%
+#             filter((!is.na(!!Inequalitymarker) & !is.na(AgeBand_3)) & Gender_Desc
+#                    %in% c("Female","Male")) %>%
+#                               summarise(NumDeath=sum(`Is_Deceased`,na.rm=TRUE),
+#                                         NumDeathAv=sum(`Avoidable Death`,na.rm=TRUE),
+#                                   Total=n(),
+#                                   .groups='drop') %>%
+#                                 mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+#                                  mutate(`Avoidable_Mortality_Rate`=round(NumDeathAv/Total *100000,2)) %>%
+#                                 mutate(`Mortality Rate`=ifelse(Gender_Desc =="Male",yes=Mortality_Rate, no=Mortality_Rate))
+# 
+# return(d)
+# }
+# 
+# 
+# #head(AllBSOLPatients$Gender_Desc)
+# 
+# #by IMD and age
+# 
+# IMDAgeGender<-InequalityDeath(BSOLAllPatientAvoiDeath,IMD_Quintile)
+
+
+
+p_IMDAgeGender<-ggplot(IMDAgeGender,aes(x=AgeBand_3,y=`Mortality Rate`,fill=Gender_Desc))+
+  geom_bar(stat="identity",position = "dodge")+
+  facet_wrap(~IMD_Quintile,nrow=1)+
+  labs(y="Mortality Rate", x="Age group", title="IMD Quintile by age and sex Mortality rates",fill="Sex") +
+  #scale_fill_viridis_d(name="Gender_Desc", option = "D") +
+  scale_fill_brewer(palette = "Dark2")+
+  #scale_fill_manual(values=c("#440154FF","#2A788EFF"))+
+  #coord_flip()+
+  #theme_minimal()+
+  theme(axis.text.x = element_text(angle=90),
+        axis.text=element_text(size=8),
+        axis.title=element_text(size=10),
+        strip.text = element_text(size=10),
+        legend.title = element_text(size=8),
+        legend.text=  element_text(size=8),
+        legend.key.size =unit(0.3,'cm' ))
+
+
+# IMDAge<-IMDAgeGender %>% 
+#           group_by(IMD_Quintile,AgeBand_3) %>% 
+#         
+#               summarise(NumDeath=sum(NumDeath),
+#             NumDeathAv=sum(NumDeathAv),
+#             Total=n(),
+#            .groups='drop') %>%
+#            mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+#            mutate(`Avoidable_Mortality_Rate`=round(NumDeathAv/Total *100000,2)) 
+
+
+ 
+ 
+  p_IMDAge<-ggplot(IMDAge,aes(x=AgeBand_3,y=Mortality_Rate,fill=AgeBand_3))+
+  geom_bar(stat="identity")+
+  facet_wrap(~IMD_Quintile,nrow = 1)+
+  labs(y="Mortality Rate", title="IMD Quintile by age Mortality rates")+
+ #scale_fill_jco()+
+ scale_fill_brewer(palette = "Dark2")+
+  #scale_fill_grey() +
+  #coord_flip()+
+  #theme_minimal()+
+    theme(axis.text.x = element_blank(),
+          axis.title.x=element_blank())
+
+
+
+
+#rates by IMD only-crude rate (to be compared to the standardised rates)
+ # IMD<-IMDAgeGender %>% 
+ #   group_by(IMD_Quintile) %>% 
+ #   summarise(NumDeath=sum(NumDeath),
+ #            NumDeathAv=sum(NumDeathAv),
+ #            Total=n(),
+ #           .groups='drop') %>%
+ #           mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+ #           mutate(`Avoidable_Mortality_Rate`=round(NumDeathAv/Total *100000,2)) 
+ 
+ #brewer.pal(n = 8, name = "Dark2")
+ 
+ 
+
+ p_IMD<- ggplot(IMD,aes(x=IMD_Quintile,y=`Mortality_Rate`))+
+  geom_bar(stat="identity",color="#1B9E77")+
+  scale_fill_brewer(palette = "Dark2")+
+  labs(y="Mortality Rate", x="IMD Quintile") +
+ coord_flip()+
+  theme_minimal() 
+
+ #by ethnicity and age
+
+#EthAgeGender<-InequalityDeath(BSOLAllPatientAvoiDeath,Ethnicity) 
+
+
+
+
+
+p_EthAgeGender<-ggplot(EthAgeGender,aes(x=AgeBand_3,y=`Mortality Rate`,fill=Gender_Desc))+
+   geom_bar(stat="identity",position = "dodge")+
+  facet_wrap(~Ethnicity,nrow=1)+
+  labs(y="Mortality Rate", x="Age group", title="IMD Quintile by age and sex Mortality rates",fill="Sex") +
+  #scale_fill_(name="Gender_Desc", option = "D") +
+  #scale_fill_manual(values=c("#440154FF","#2A788EFF"))+
+  scale_fill_brewer(palette = "Dark2")+
+  #coord_flip()+
+  theme(axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=8),
+        axis.title=element_text(size=10),
+        strip.text = element_text(size=10),
+        legend.title = element_text(size=8),
+        legend.text=  element_text(size=8),
+        legend.key.size =unit(0.3,'cm' ))
+
+
+ 
+  
+  ##try line chart
+ p_EthAge<- ggplot(EthAge,aes(fill=AgeBand_3,x=AgeBand_3,y=`Mortality_Rate`))+
+  geom_bar(stat="identity")+
+  facet_wrap(~Ethnicity)+
+  labs(y="Mortality Rate", x="Age group", title="Ethnicity by age Mortality rates") +
+  scale_fill_brewer(palette = "Dark2")+
+  #coord_flip()+
+  theme(axis.text.y = element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.x = element_text(angle=45),
+        axis.text=element_text(size=8),
+        axis.title=element_text(size=10),
+        strip.text = element_text(size=10),
+        legend.title = element_text(size=8),
+        legend.text=  element_text(size=8),
+        legend.key.size =unit(0.3,'cm' ))
+
+ 
+ 
+#rates by Ethnicity only-crude rate (to be compared to the standardised rates)
+ # Eth<-EthAgeGender %>% 
+ #   group_by(Ethnicity) %>% 
+ #   summarise(NumDeath=sum(NumDeath),
+ #              NumDeathAv=sum(NumDeathAv),
+ #                Total=n(),
+ #                .groups='drop') %>%
+ #                  mutate(`Mortality_Rate`=round(NumDeath/Total *100000,2)) %>%
+ #                  mutate(`Avoidable_Mortality_Rate`=round(NumDeathAv/Total *100000,2)) 
+
+
+
+ p_Eth<- ggplot(Eth,aes(x=Ethnicity,y=`Mortality_Rate`))+
+  geom_bar(stat="identity",color='#7570B3')+
+  labs(y="Mortality Rate", x="Ethnicity") +
+  coord_flip()
+  #theme_minimal() 
+ 
+
+ #"#1B9E77" "#D95F02" "#7570B3" "#E7298A" "#66A61E" "#E6AB02" "#A6761D" "#666666"
+
+
+```
+
+```{r}
+#| label: tbl-Age
+#| tbl-cap: BSOL population and mortality by age 
+
+
+ AgeBSOL %>%
+  flextable() %>%
+ set_header_labels( values=c("Age Band",paste0('Number ', LTCPar, ' Patients'),
+                             "Number Death",
+                             paste0('Number ', ' Death with ' , LTCPar, ' as cause' ),
+                            paste0('Number ', ' Death with ' , LTCPar),
+                            "Total population",
+                            "Mortality Rate per 100,000" ,
+                            paste0(LTCPar,' Cause Mortality Rate per 100,000'),
+                             paste0(LTCPar,' Patients Mortality Rate per 100,000')) ) %>%
+  theme_vanilla() %>%
+    autofit()%>%
+  set_caption("BSOL population by age")
+
+```
+
+```{r}
+#| {label: tbl-IMD, tbl-cap: BSOL population and mortality by IMD} 
+
+
+  IMD %>% 
+  flextable() %>% 
+ set_header_labels( values=c("IMD Quintile",
+                             paste0('Number ', LTCPar, ' Patients'),
+                             "Number Death",
+                             paste0('Number ', ' Death with ' , LTCPar, ' as cause' ),
+                            paste0('Number ', ' Death with ' , LTCPar),
+                            "Total population",
+                            "Mortality Rate per 100,000" ,
+                            paste0(LTCPar,' Cause Mortality Rate per 100,000'),
+                             paste0(LTCPar,' Patients Mortality Rate per 100,000'))) %>% 
+  theme_vanilla() %>%
+    autofit() %>% 
+  set_caption("BSOL population by IMD")
+```
+
+```{r}
+#| label: tbl-IMDAge
+#| tbl-cap: BSOL population and mortality by IMD and age 
+
+
+ IMDAge %>%
+  flextable() %>%
+ set_header_labels( values=c("IMD Quintile","Age Band","LTC Population","Number Death","Number LTC Death","Number death with LTC","Total population","Mortality Rate per 100,000" ,"LTC Mortality Rate per 100,000","Mortality Rate with LTC per 100,000" )) %>%
+  theme_vanilla() %>%
+    autofit()%>%
+  set_caption("BSOL population by IMD and age")
+
+```
+
+```{r}
+#| label: tbl-IMDAgeSex
+#| tbl-cap: BSOL population and mortality by IMD, age and sex
+
+
+IMDAgeGender %>% select(IMD_Quintile,AgeBand_3,Gender_Desc,LTCPop,NumDeath,NumDeathLTC,NumDeathwithLTC,Total,Mortality_Rate,LTC_Mortality_Rate,withLTC_Mortality_Rate) %>%
+  flextable() %>%
+ set_header_labels( values=c("IMD Quintile","Age Band","Sex","LTC Population","Number Death","Number LTC Death","Number death with LTC","Total population","Mortality Rate per 100,000" ,"LTC Mortality Rate per 100,000","Mortality Rate with LTC per 100,000" )) %>%
+  theme_vanilla() %>%
+    autofit()
+
+```
+
+```{r}
+#| label: tbl-Eth
+#| tbl-cap: BSOL population and mortality Ethnicity
+
+
+Eth %>% flextable() %>%
+ set_header_labels( values=c("Ethnicity","LTC Population","Number Death","Number LTC Death","Number death with LTC","Total population","Mortality Rate per 100,000" ,"LTC Mortality Rate per 100,000","Mortality Rate with LTC per 100,000" ))%>%
+  theme_vanilla() %>%
+    autofit()
+```
+
+```{r}
+#| label: tbl-EthAge
+#| tbl-cap: BSOL population and mortaltiy by ethnicity and age 
+
+
+ EthAge %>%
+  flextable() %>%
+ set_header_labels( values=c("Ethnicity","Age Band","LTC Population","Number Death","Number LTC Death","Number death with LTC","Total population","Mortality Rate per 100,000" ,"LTC Mortality Rate per 100,000","Mortality Rate with LTC per 100,000" ))%>%
+  theme_vanilla() %>%
+    autofit() %>%
+  set_caption("BSOL population by ethnicity and age")
+
+
+```
+
+```{r}
+#| label: tbl-EthAgeSex
+#| tbl-cap: BSOL population and mortality Ethnicity, age and sex
+
+EthAgeGender %>% select(Ethnicity,AgeBand_3,Gender_Desc,LTCPop,NumDeath,NumDeathLTC,NumDeathwithLTC,Total,Mortality_Rate,LTC_Mortality_Rate,withLTC_Mortality_Rate)  %>%
+  flextable() %>%
+ set_header_labels( values=c("Ethnicity","Age Band","Sex","LTC Population","Number Death","Number LTC Death","Number death with LTC","Total population","Mortality Rate per 100,000" ,"LTC Mortality Rate per 100,000","Mortality Rate with LTC per 100,000" )) %>%
+  theme_vanilla() %>%
+    autofit()   %>%
+  set_caption("BSOL population by ethnicity,age and sex")
+```
+
+```{r}
+#| label: tbl-IMDEthageSex
+#| tbl-cap: BSOL population and mortality by Ethnicity,IMD, age and gender
+
+IMDEthAgeGender %>% select(Ethnicity,IMD_Quintile,AgeBand_3,Gender_Desc,LTCPop,NumDeath,NumDeathLTC,NumDeathwithLTC,Total,Mortality_Rate,LTC_Mortality_Rate,withLTC_Mortality_Rate)  %>%
+  flextable() %>%
+ set_header_labels( values=c("Ethnicity","IMD Quintile","Age Band","Sex","LTC Population","Number Death","Number LTC Death","Number death with LTC","Total population","Mortality Rate per 100,000" ,"LTC Mortality Rate per 100,000","Mortality Rate with LTC per 100,000" )) %>%
+  theme_vanilla() %>%
+    autofit()  # %>%
+ # set_caption("BSOL population by ethnicity,age and sex")
+```
+
+```{r}
+#| label: tbl-IMDEthAge
+#| tbl-cap: BSOL population and mortality by Ethnicity,IMD and age
+
+IMDEthAge %>% select(Ethnicity,IMD_Quintile,AgeBand_3,LTCPop,NumDeath,NumDeathLTC,NumDeathwithLTC,Total,Mortality_Rate,LTC_Mortality_Rate,withLTC_Mortality_Rate)  %>%
+  flextable() %>%
+ set_header_labels( values=c("Ethnicity","IMD Quintile","Age Band","LTC Population","Number Death","Number LTC Death","Number death with LTC","Total population","Mortality Rate per 100,000" ,"LTC Mortality Rate per 100,000","Mortality Rate with LTC per 100,000" )) %>%
+  theme_vanilla() %>%
+    autofit()  # %>%
+ # set_caption("BSOL population by ethnicity,age and sex")
+```
+
+```{r}
+#| label: tbl-IMDEth
+#| tbl-cap: BSOL population and mortality by Ethnicity and IMD
+
+IMDEth %>% select(Ethnicity,IMD_Quintile,LTCPop,NumDeath,NumDeathLTC,NumDeathwithLTC,Total,Mortality_Rate,LTC_Mortality_Rate,withLTC_Mortality_Rate)  %>%
+  flextable() %>%
+ set_header_labels( values=c("Ethnicity","IMD Quintile","LTC Population","Number Death","Number LTC Death","Number death with LTC","Total population","Mortality Rate per 100,000" ,"LTC Mortality Rate per 100,000","Mortality Rate with LTC per 100,000" )) %>%
+  theme_vanilla() %>%
+    autofit()  # %>%
+ # set_caption("BSOL population by ethnicity,age and sex")
+```
+
+\newpage
+
+## Appendix 2: Reference Populations {#sec-Appendix2}
+
+```{r}
+#| label: tbl-CensusAge
+#| tbl-cap: Census 2021 by age
+
+###Age
+CensusPop_Age%>% flextable() %>% 
+ set_header_labels( values=c("Age Group","Age specific population","Total population","Proportion of the population" )) %>% 
+  theme_vanilla() %>%
+    autofit()%>% 
+  set_caption("Census 2021 by age")
+
+
+```
+
+```{r}
+#| label: tbl-CensusAgeSex
+#| tbl-cap: Census 2021 by age and sex
+
+################Age,Sex standardisation 
+
+
+CensusPop_Age_Sex%>% flextable() %>% 
+ set_header_labels( values=c("Age Group","Sex","Age specific population","Total population","Proportion of the population" )) %>% 
+  theme_vanilla() %>%
+    autofit() 
+
+```
+
+```{r}
+#| label: tbl-CensusEthAge
+#| tbl-cap: Census 2021 by ethnicity and age
+
+
+##################Age by ethnicity
+
+
+CensusPop_Age_Eth%>% flextable() %>% 
+ set_header_labels( values=c("Age Group","Ethnicity code","Ethnicity","Age/Ethnicity Specific population","Total population","Proportion of the population" )) %>% 
+  theme_vanilla() %>%
+    autofit() %>% 
+  set_caption("Census 2021 by ethnicity and age")
+
+```
+
+```{r}
+#| label: tbl-CensusEthAgeSex
+#| tbl-cap: Census 2021 by ethnicity, age and sex
+
+#################Age, sex by ethnicity
+
+                      
+CensusPop_Age_Sex_Eth %>% flextable() %>% 
+ set_header_labels( values=c("Age Group","Sex","Ethnicity code","Ethnicity","Age/Sex/Ethnicity Specific population","Total population","Proportion of the population" )) %>% 
+  theme_vanilla() %>%
+    autofit()%>% 
+  set_caption("Census 2021 by ethnicity, age and sex")
+ 
+```
+
+```{r}
+#| label: tbl-CensusIMDAge
+#| tbl-cap: Census 2021 by IMD and age
+
+###################Age by IMD
+
+
+CensusPop_Age_IMD%>% flextable() %>% 
+ set_header_labels( values=c("Age Group","IMD Quintile","Age/IMD Specific population","Total population","Proportion of the population" )) %>% 
+  theme_vanilla() %>%
+    autofit()%>% 
+  set_caption("Census 2021 by IMD and age")
+
+```
+
+```{r}
+#| label: tbl-CensusIMDAgeSex
+#| tbl-cap: Census 2021 by IMD, age and sex
+
+
+###################Age,Sex by IMD
+
+
+CensusPop_Age_Sex_IMD%>% flextable() %>% 
+ set_header_labels( values=c("Age Group","Sex","IMD Quintile","Age/Sex/IMD Specific population","Total population","Proportion of the population" )) %>% 
+  theme_vanilla() %>%
+    autofit() %>% 
+  set_caption("Census 2021 by IMD, age and sex")
+
+
+```
+
+```{r}
+#| label: tbl-ESP2013
+#| tbl-cap: European Standard Population by age
+
+
+##################European standard population
+t_esp2013%>% flextable() %>% 
+ set_header_labels( values=c("Age Group","Age Specific population" )) %>% 
+  theme_vanilla() %>% 
+    autofit() %>% 
+  set_caption("European Standard population by age")
+
+
+
+```
+
+## Appendix 3: Direct Standardisaton {#sec-Appendix3}
+
+**Age standardisation calculation**
+
+To manually calculate the age standardised rates in the different groups to be compared we use the below equation:
+
+```{=tex}
+\begin{align*}
+\textnormal{Age standardised rate} &= \sum (Cr_i \cdot W_i)\\ 
+\textnormal{where} &W_i=\frac{P_i}{\sum P_i}\\
+&P_i\ \textnormal{Standard population in age group}\ i\\
+& C_r\ \textnormal{Observed crude mortality rate per 100,000}\\
+&i_th\ \textnormal{age groups 15 under, 16-24 ,…65+}\\
+\end{align*}
+```
+As an example we calculate the age standardisated rate for IMD = 1 group, we first calculate the age-specific mortality rates for each group (divide the number of deaths by the respective population then multiplying by 100,000-Appendix 1- @tbl-IMDAge):
+
+```{=tex}
+\begin{align*}
+\textnormal{Age specific rate for 15 under} &= \frac{143}{207,405} \times 100,000 &=68.95\\ \textnormal{16-24} &= \frac{94}{127,053} \times 100,000 &= 73.98\\
+\textnormal{25-34} &= \frac{100}{146,995} \times 100,000 &= 68.03\\
+&\textnormal{...etc}
+\end{align*}
+```
+We then weight each of the age specific rates by the proportion that particular age group of the census 2011 England population (Appendix2- @tbl-CensusAge):
+
+```{=tex}
+\begin{align*}
+
+\textnormal{Weighted age specific rates 15 under}&=68.95\times 0.186\\ 
+\textnormal{16-24}&=73.98\times 0.12\\
+\textnormal{25-34}&=68.03\times 0.136\\
+&\textnormal{...etc}\\
+
+\end{align*}
+```
+Age-standardised mortality rates for IMD=1 is the sum of all the weighted age specific rates.
+
+There are two R packages to standardise an outcome; using **dsr** package and using **PHEindicatormethods** package. The **dsr** package only allows direct standardisation. The package cannot be directly downloaded from CRAN, however it is still available from the CRAN archive (see code for how to install).
+
+We first use direct age standardisation of the mortality rates then we explore the age and sex standardisation. In this document we use the direct standardisation for within population groups comparisons, but the direct standardisation can also be used to compare different populations for which we know the number of the at-risk population and the number of events (mortality in this case).
+
+The **dsr** function expects one data frame for the populations to be compared and event counts, and a separate data frame with the reference population. It is also expecting that the column containing the population count in the standard population will be called "pop" and does not contain any other columns.Below we can see that the **dsr** function computes the standardised rates as well as the crude rates with the sigma limits.
+
+```{r}
+#| echo: true
+#| label: dsr package installation
+
+
+
+##Standardisation using DSR package 
+##dsr package installation (un-comment)
+
+#packageurl <- "https://cran.r-project.org/src/contrib/Archive/dsr/dsr_0.2.2.tar.gz"
+#pkgFile<-"dsr_0.2.2.tar.gz"
+#download.file(url=packageurl,destfile = pkgFile)
+#install.packages("frailtypack")
+#install.packages(pkgFile, repos=NULL, type="source")
+```
+
+Another way of calculating standardised rates iw using the **PHEIndicatormethods** package. It allows the calculation of direct and indirect standardised rates. The function *phe_dsr* is used to get the direct standardised rates per group to be compared. The standard population can be provided as column within the dataframe passed to the function or as a separate vector. If provided within the dataframe the *stdpoptype="field"* and if provided as a vector, *stdpoptype="vector"*. In the latter, the ordering of rows of the characteristic to which we would like to standardise is similar in the standard population and the dataframe.
+
+## Appendix 4: Crude and Standardised rates by ethnicity and IMD {#sec-Appendix4}
+
+```{r}
+#| label: tbl-IMDEthAgeStdPrev
+#| tbl-cap: !expr glue::glue("Prevalence and age-standardised prevalence of {params$LTC} in BSOL population by IMD and ethnicity")
+
+
+PopLTC_IMD_Eth2
+```
+
+
+```{r}
+#| label: tbl-IMDEthAgeStdMort
+#| tbl-cap: !expr glue::glue("Mortality rate and age-standardised mortality rate in BSOL {params$LTC} population by IMD and ethnicity")
+
+
+PopLTC_IMD_Eth2_m
+```
+
+
+```{r}
+#| label: tbl-IMDEthAgeStdMortc
+#| tbl-cap: !expr glue::glue("Mortality rate and age-standardised mortality rate in BSOL caused by {params$LTC} by IMD and ethnicity (with {params$LTC} as the denominator)")
+
+
+PopLTC_IMD_Eth2_mc
+```
+
+
+
+```{r}
+#| label: tbl-IMDEthAgeStdMortcD
+#| tbl-cap: !expr glue::glue("Mortality rate and age-standardised mortality rate in BSOL caused by {params$LTC} by IMD and ethnicity (with whole population as a denominator")
+
+
+llll
+```
+
+
+
