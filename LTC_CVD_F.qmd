@@ -107,8 +107,13 @@ Monthly death count in BSOL is extracted from the death register from 2018. The 
 
 #DeathPatients<-read_rds_data(DeathPatients.rds)
 DeathPatients <- readRDS("data/DeathPatients.rds")
-
+PatientID_Ethn<- readRDS("data/PatientID_Ethn.rds")
 #dbDisconnect(connection)
+
+LTCPar<-{params$LTC}
+#LTCPar<-"CVD"
+
+LTCCol<-as.name(paste0(LTCPar,'_Patient'))
 
 
 ```
@@ -261,6 +266,108 @@ AllBSOLPatients<-AllBSOLPatients %>%
 
 
 ```
+We want to understand the yearly mortality by ethnicity and IMD caused by `{r} params$LTC`. This will show the percentage of death caused by `{r} params$LTC` from all other causes of death. Black, African, Caribbean or black British and IMD=3 have the highest percentage of death by `{r} params$LTC`compared to all other ethnicity and IMD, respectively.   
+
+```{r fig.height=3,fig.width=10}
+
+
+YearlyDeath<-DeathPatients %>% left_join(PatientID_Ethn,
+                                    by=c("NHSNumber"="Pseudo_NHS_Number")) %>% 
+                      #filter(Cause_Death=="CVD") %>% 
+                        select("Ethnic_Grouping_Census", "IMD_Decile","MonthOfDeath","Cause_Death","NHSNumber") %>% 
+                        
+                       mutate(YearDeath=year(as.Date((str_sub(MonthOfDeath,1,4)),"%Y")) )
+
+
+                              
+#group by ethinicity
+YearEth<-YearlyDeath %>% group_by(YearDeath,Ethnic_Grouping_Census) %>% 
+                    filter(YearDeath!=2024 & !is.na(Ethnic_Grouping_Census)) %>% 
+                    
+                    summarise(NumberOfLTCDeath=sum(Cause_Death == "CVD" ,na.rm=TRUE),
+                    NumberOfDeath=n(),
+                            
+                         .groups='drop') %>% 
+                    mutate(PercentageDeath=round(NumberOfLTCDeath/NumberOfDeath*100),2)
+
+
+ #group by ethinicity
+YearIMD<-YearlyDeath %>%  
+                        mutate(IMD_Quintile=case_when (str_detect(IMD_Decile,"1|2")~1, 
+					                                str_detect(IMD_Decile,"3|4")~2,
+                                    			str_detect(IMD_Decile,"5|6")~3,
+      					                          str_detect(IMD_Decile,"7|8")~4,
+                                          str_detect(IMD_Decile,"9|10")~5,
+      					                          TRUE ~ NA)    )    %>%          
+                    select("IMD_Quintile","YearDeath","Cause_Death","NHSNumber") %>% 
+                    filter(YearDeath!=2024 & !is.na(IMD_Quintile)) %>% 
+                       group_by(YearDeath,IMD_Quintile)%>% 
+
+                    summarise(NumberOfLTCDeath=sum(Cause_Death == "CVD" ,na.rm=TRUE),
+                              NumberOfDeath=n(),
+                         .groups='drop') %>% 
+                       mutate(PercentageDeath=round(NumberOfLTCDeath/NumberOfDeath*100,2))
+  
+
+
+```
+
+```{r fig.height=3,fig.width=10}
+#| label: fig-DeathEth
+#| fig-cap: !expr glue::glue ("Yearly BSOL mortality with {params$LTC} as the cause of death as a percentage of death by ethnicity.")
+
+
+
+ggplot(YearEth,aes(x=YearDeath,y=PercentageDeath,color=Ethnic_Grouping_Census,linetype=Ethnic_Grouping_Census,shape=Ethnic_Grouping_Census))+ 
+  geom_point(size=1.1,shape=16)+
+  geom_line(size=0.8)+
+  #theme_bw()+
+scale_x_continuous(name="Year of Death")+
+#scale_colour_wsj("colors6")+
+#scale_color_stata(scheme = "s2color")+
+scale_color_brewer(type = "qual", palette = 2)  +
+#labs(  title="BSOL monthly percentage of LTC mortality per 100,000") +
+scale_y_continuous(name=paste0("Percentagy " ,LTCPar, " death"))+#+breaks=seq(0,2,max(MonthlyLTCDeath$CrudeRate))+
+theme(axis.text=element_text(size=8,face="bold")
+      ,axis.line=element_line(color="black",size=0.6)
+      ,axis.title = element_text(size=7,face="bold")
+      ,plot.title = element_text(size=10,face="bold")
+      ,axis.ticks.length = unit(0.15, "cm")
+      ,legend.position = "bottom"
+      ,legend.title = element_blank() )
+
+
+
+
+```
+
+```{r fig.height=3,fig.width=10}
+#| label: fig-DeathIMD
+#| fig-cap: !expr glue::glue ("Yearly BSOL mortality with {params$LTC} as the cause of death as a percentage of death by IMD.")
+
+
+
+ggplot(YearIMD,aes(x=YearDeath,y=PercentageDeath,color=as.factor(IMD_Quintile),linetype=as.factor(IMD_Quintile),shape=as.factor(IMD_Quintile)))+ 
+  geom_point(size=1.1,shape=16)+
+  geom_line(size=0.7)+
+  #theme_bw()+
+scale_x_continuous(name="Year of Death")+
+#scale_colour_wsj("colors6")+
+#scale_color_stata(scheme = "s2color")+
+scale_color_brewer(type = "qual", palette = 2)  +
+#labs(  title="BSOL monthly percentage of LTC mortality per 100,000") +
+scale_y_continuous(name=paste0("Percentage " ,LTCPar, " death"))+#+breaks=seq(0,2,max(MonthlyLTCDeath$CrudeRate))+
+theme(axis.text=element_text(size=8,face="bold")
+      ,axis.line=element_line(color="black",size=0.6)
+      ,axis.title = element_text(size=7,face="bold")
+      ,plot.title = element_text(size=10,face="bold")
+      ,axis.ticks.length = unit(0.15, "cm")
+      ,legend.position = "bottom"
+      ,legend.title = element_blank() )
+
+
+
+```
 
 
 \newpage
@@ -276,11 +383,6 @@ We first study the population and its age profile and number of death and `{r} p
 ##join death data with our main patient level data
 BSOLAllPatientAvoiDeath<- AllBSOLPatients %>% left_join(DeathPatients,
                                     by=c("Pseudo_NHS_Number_Varchar"="NHSNumber"))
-
-LTCPar<-{params$LTC}
-#LTCPar<-"CVD"
-
-LTCCol<-as.name(paste0(LTCPar,'_Patient'))
 
 
 
